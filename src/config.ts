@@ -11,9 +11,12 @@ export interface ConfigTask {
   success?: string;
 }
 
+/** Either a built-in adapter name or a generic shell command template. */
+export type AgentSpec = string | { command: string };
+
 /** The optirule.yml file after parsing and defaulting. */
 export interface OptiruleConfig {
-  agent: string;
+  agent: AgentSpec;
   instruction_files: string[];
   test_command: string;
   max_tasks: number;
