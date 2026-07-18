@@ -18,7 +18,7 @@ export function parseSections(markdown: string): Section[] {
   const lines = markdown.split("\n");
   const sections: Section[] = [];
   let title = "(intro)";
-  let buffer: string[] = [title];
+  let buffer: string[] = [];
 
   const flush = () => {
     const body = buffer.join("\n");
