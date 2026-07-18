@@ -1,5 +1,5 @@
 import { writeFileSync, existsSync } from "node:fs";
-import { detectInstructionFiles, detectAgent } from "../detect.js";
+import { detectInstructionFiles, detectInstalledAgents, chooseAgent, detectAgent } from "../detect.js";
 import { scaffoldConfig, CONFIG_FILENAME } from "../config.js";
 
 /** Detect instruction files and scaffold optirule.yml in the repo root. */
@@ -20,8 +20,11 @@ export function runInit(repoDir: string): void {
     return;
   }
 
-  const agent = detectAgent() ?? "claude";
+  const installed = detectInstalledAgents();
+  const agent = chooseAgent(files, installed, detectAgent());
   writeFileSync(configPath, scaffoldConfig(files, agent));
+  const found = installed.length ? installed.join(", ") : "none on PATH";
   console.log(`Wrote ${CONFIG_FILENAME} (agent: ${agent}, files: ${files.join(", ")}).`);
+  console.log(`Detected agent CLIs: ${found}.`);
   console.log("Next: review the file, then run `optirule run`.");
 }
