@@ -11,10 +11,9 @@ function impact(title: string, signal: SectionImpact["signal"]): SectionImpact {
   return {
     file: "CLAUDE.md",
     title,
-    tokens: 100,
-    impactPct: 0,
+    staticTokens: 100,
+    tokenImpact: 0,
     ablatedRuns: 6,
-    ablatedPassRate: 1,
     tokenShare: 0.5,
     signal,
   };

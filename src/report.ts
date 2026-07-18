@@ -42,12 +42,15 @@ const SIGNAL_LABELS: Record<ImpactSignal, string> = {
 };
 
 function impactRow(i: SectionImpact): string {
-  const sign = i.impactPct >= 0 ? "+" : "";
   const cls = i.signal === "earns-its-keep" ? "good" : i.signal === "actively-hurts" ? "bad" : "muted";
+  const impact =
+    i.tokenImpact === undefined
+      ? "—"
+      : `${i.tokenImpact >= 0 ? "+" : ""}${Math.round(i.tokenImpact).toLocaleString()} tok`;
   return `<tr>
     <td>${esc(i.title)}</td>
-    <td>${sign}${i.impactPct.toFixed(0)} pts <span class="muted">(${Math.round(i.ablatedPassRate * 100)}% ablated)</span></td>
-    <td>${i.tokens.toLocaleString()}</td>
+    <td>${i.staticTokens.toLocaleString()}</td>
+    <td>${impact}</td>
     <td class="${cls}">${SIGNAL_LABELS[i.signal]}</td>
   </tr>`;
 }
@@ -55,20 +58,26 @@ function impactRow(i: SectionImpact): string {
 function impactSection(impacts: SectionImpact[]): string {
   return `
 <h2>Section impact (leave-one-out ablation)</h2>
-<p class="muted">Each section was removed in turn; impact is <code>current pass rate − ablated pass rate</code>. Positive means removing the section hurt (it earns its keep); ~0 means no measurable effect; negative means the section may hurt.</p>
+<p class="muted">Each section was removed in turn; token impact is <code>ablated tokens − current tokens</code>. Positive means the agent burned more tokens without the section (it earns its keep); ~0 means no measurable effect; negative means the section made the agent burn more.</p>
 <table>
-  <thead><tr><th>Section</th><th>Pass-rate impact</th><th>Tokens</th><th>Signal</th></tr></thead>
+  <thead><tr><th>Section</th><th>Static tokens</th><th>Token impact</th><th>Signal</th></tr></thead>
   <tbody>${impacts.map(impactRow).join("")}</tbody>
 </table>`;
 }
 
 /** Render the analysis into a single self-contained HTML document. */
 export function renderReport(analysis: Analysis): string {
-  const { passRateDeltaPct, lowConfidence, sections, totalInstructionTokens, taskCount } = analysis;
-  const sign = passRateDeltaPct >= 0 ? "+" : "";
-  const headline = `Your instructions changed pass rate by <strong>${sign}${passRateDeltaPct.toFixed(0)} pts</strong>`;
+  const { passRateDeltaPct, tokenDeltaPct, lowConfidence, sections, totalInstructionTokens, taskCount } =
+    analysis;
+  const headline =
+    tokenDeltaPct === undefined
+      ? `Your instructions changed pass rate by <strong>${passRateDeltaPct >= 0 ? "+" : ""}${passRateDeltaPct.toFixed(0)} pts</strong>`
+      : `Your instructions changed agent token use by <strong>${tokenDeltaPct >= 0 ? "+" : ""}${tokenDeltaPct}%</strong>`;
+  const recommendation = analysis.recommendation.length
+    ? `<div class="rec">${analysis.recommendation.map((l) => `<p>${esc(l)}</p>`).join("")}</div>`
+    : "";
   const confidence = lowConfidence
-    ? `<p class="warn">⚠ Low confidence: too few runs to separate signal from agent noise. Increase <code>reps</code> or add more tasks before trusting this delta.</p>`
+    ? `<p class="warn">⚠ Low confidence: too few runs to separate signal from agent noise. Increase <code>reps</code> or add more tasks before trusting these deltas.</p>`
     : "";
 
   return `<!doctype html>
@@ -87,11 +96,14 @@ export function renderReport(analysis: Analysis): string {
   .bar { display: inline-block; height: .7em; background: #4a90d9; border-radius: 2px; vertical-align: middle; margin-right: .4rem; min-width: 2px; }
   code { background: #8882; padding: 0 .3em; border-radius: 3px; }
   .good { color: #2a8a3e; font-weight: 600; } .bad { color: #c0392b; font-weight: 600; }
+  .rec { background: #4a90d922; border-left: 3px solid #4a90d9; border-radius: 4px; padding: .4rem .8rem; margin: 1rem 0; }
+  .rec p { margin: .3rem 0; }
 </style></head><body>
 <h1>optirule report</h1>
 <p class="headline">${headline}</p>
-<p class="muted">Across ${taskCount} task${taskCount === 1 ? "" : "s"}, baseline (no instructions) vs current (your instruction file).</p>
+<p class="muted">Across ${taskCount} task${taskCount === 1 ? "" : "s"}, baseline (no instructions) vs current (your instruction file). Pass/fail is one metric among several — efficiency is the primary signal.</p>
 ${confidence}
+${recommendation}
 
 <h2>Summary</h2>
 <table>
