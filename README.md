@@ -76,13 +76,27 @@ tasks:
 
 ### Agents
 
-- Built-in: `claude` (Claude Code CLI, run headless with autonomous edits).
-- Anything else via a generic command template:
+Built-in adapters (each run headless with autonomous edits and machine-readable
+output; the CLI must be on your `PATH`):
 
-  ```yaml
-  agent:
-    command: "aider --model ollama/codestral --yes {prompt}"
-  ```
+| `agent` | CLI | Default instruction file |
+| --- | --- | --- |
+| `claude` | Claude Code | `CLAUDE.md` |
+| `codex` | OpenAI Codex | `AGENTS.md` |
+| `opencode` | opencode | `AGENTS.md` |
+| `gemini` | Gemini CLI | `GEMINI.md` |
+| `aider` | aider | `CONVENTIONS.md` |
+
+Anything else via a generic command template (no token or files-read parsing):
+
+```yaml
+agent:
+  command: "my-agent --model ollama/codestral --yes {prompt}"
+```
+
+The report shows **avg files read** alongside tokens and files changed when the
+adapter can report it (`claude` via its `Read` tool calls, `aider` from its chat
+log); it reads `—` for adapters that don't expose it.
 
 ## Caveats
 
