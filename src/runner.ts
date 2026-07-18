@@ -72,6 +72,7 @@ async function runTask(
           durationMs: agent.durationMs,
           tokens: adapter.parseTokenUsage(agent.stdout),
           filesChanged: changed,
+          filesRead: adapter.parseFilesRead?.(agent.stdout),
         };
         results.push(result);
         onProgress?.(result);

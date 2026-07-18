@@ -9,6 +9,8 @@ export interface VariantSummary {
   avgDurationMs: number;
   avgTokens?: number;
   avgFilesChanged: number;
+  /** Average files read, when the adapter reports them; undefined otherwise. */
+  avgFilesRead?: number;
 }
 
 /** Honest label for a section's measured ablation impact. */
@@ -57,6 +59,9 @@ function summarize(variant: string, results: RunResult[]): VariantSummary {
   const runs = results.length;
   const passed = results.filter((r) => r.passed).length;
   const tokenValues = results.map((r) => r.tokens).filter((t): t is number => t !== undefined);
+  const filesReadCounts = results
+    .filter((r) => r.filesRead !== undefined)
+    .map((r) => r.filesRead!.length);
   const avg = (nums: number[]) => (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0);
   return {
     variant,
@@ -66,6 +71,7 @@ function summarize(variant: string, results: RunResult[]): VariantSummary {
     avgDurationMs: avg(results.map((r) => r.durationMs)),
     avgTokens: tokenValues.length ? avg(tokenValues) : undefined,
     avgFilesChanged: avg(results.map((r) => r.filesChanged.length)),
+    avgFilesRead: filesReadCounts.length ? avg(filesReadCounts) : undefined,
   };
 }
 

@@ -13,12 +13,14 @@ function pct(fraction: number): string {
 
 function summaryRow(s: VariantSummary): string {
   const tokens = s.avgTokens === undefined ? "—" : Math.round(s.avgTokens).toLocaleString();
+  const filesRead = s.avgFilesRead === undefined ? "—" : s.avgFilesRead.toFixed(1);
   return `<tr>
     <td>${s.variant}</td>
     <td>${pct(s.passRate)} <span class="muted">(${s.passed}/${s.runs})</span></td>
     <td>${tokens}</td>
     <td>${(s.avgDurationMs / 1000).toFixed(1)}s</td>
     <td>${s.avgFilesChanged.toFixed(1)}</td>
+    <td>${filesRead}</td>
   </tr>`;
 }
 
@@ -93,7 +95,7 @@ ${confidence}
 
 <h2>Summary</h2>
 <table>
-  <thead><tr><th>Variant</th><th>Pass rate</th><th>Avg tokens</th><th>Avg runtime</th><th>Avg files changed</th></tr></thead>
+  <thead><tr><th>Variant</th><th>Pass rate</th><th>Avg tokens</th><th>Avg runtime</th><th>Avg files changed</th><th>Avg files read</th></tr></thead>
   <tbody>${analysis.variants.map(summaryRow).join("")}</tbody>
 </table>
 ${analysis.sectionImpacts?.length ? impactSection(analysis.sectionImpacts) : ""}

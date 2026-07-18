@@ -41,6 +41,20 @@ describe("analyze", () => {
     expect(a.variants[1]!.avgTokens).toBe(200);
   });
 
+  it("averages files read when the adapter reports them", () => {
+    const runs: RunResult[] = [
+      { taskId: "t", variant: "current", rep: 0, passed: true, durationMs: 1, filesChanged: [], filesRead: ["a.ts", "b.ts"] },
+      { taskId: "t", variant: "current", rep: 1, passed: true, durationMs: 1, filesChanged: [], filesRead: ["a.ts"] },
+    ];
+    const a = analyze(runs, [], 1);
+    expect(a.variants[1]!.avgFilesRead).toBe(1.5);
+  });
+
+  it("leaves avgFilesRead undefined when no run reports files read", () => {
+    const a = analyze([result("current", true)], [], 1);
+    expect(a.variants[1]!.avgFilesRead).toBeUndefined();
+  });
+
   it("omits section impacts without ablation data", () => {
     const a = analyze([result("current", true)], [], 1);
     expect(a.sectionImpacts).toBeUndefined();

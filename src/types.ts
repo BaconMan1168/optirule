@@ -40,4 +40,6 @@ export interface RunResult {
   tokens?: number;
   /** Files modified in the worktree, from `git diff --name-only`. */
   filesChanged: string[];
+  /** Files the agent read, when the adapter can report them. */
+  filesRead?: string[];
 }
