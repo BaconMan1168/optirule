@@ -1,9 +1,21 @@
 # optirule
 
+[![npm version](https://img.shields.io/npm/v/optirule.svg)](https://www.npmjs.com/package/optirule)
+[![npm downloads](https://img.shields.io/npm/dm/optirule.svg)](https://www.npmjs.com/package/optirule)
+[![node](https://img.shields.io/node/v/optirule.svg)](https://www.npmjs.com/package/optirule)
+[![license](https://img.shields.io/npm/l/optirule.svg)](./LICENSE)
+
 A/B test your coding-agent instruction files (`CLAUDE.md`, `AGENTS.md`, …) against
 real tasks from your own repo. Linters check structure and optimizers guess —
 optirule **measures** whether your instructions actually make the agent work more
 efficiently, and shows what each section costs in tokens.
+
+## Requirements
+
+- **Node.js ≥ 18**
+- A **git repository** to run in (optirule works from your project root)
+- At least one **coding-agent CLI** on your `PATH` (`claude`, `codex`, `gemini`,
+  `opencode`, or `aider`) — or any agent wired up via a custom command
 
 ## Quick start
 
@@ -153,3 +165,41 @@ npm run build      # bundle to dist/
 npm test           # vitest
 npm run typecheck
 ```
+
+## Contributing
+
+Contributions are welcome — whether it's a bug report, a new agent adapter, or a
+docs fix. optirule is small on purpose, so the bar is "does this help people
+measure their instruction files without adding weight the project doesn't need."
+
+**Found a bug or have an idea?** Open an
+[issue](https://github.com/BaconMan1168/optirule/issues) first. For anything
+non-trivial, please start a discussion there before opening a PR so we can agree
+on the approach — it saves everyone rework.
+
+**Sending a pull request:**
+
+1. Fork the repo and create a branch off `main` (`git checkout -b fix-token-parse`).
+2. Set up your environment with the [Development](#development) steps above.
+3. Make your change. Keep it focused — one logical change per PR, and match the
+   existing style (the codebase favors small, surgical edits).
+4. **Add or update tests** for any behavior you change (`npm test`).
+5. Make sure `npm test` and `npm run typecheck` both pass before pushing.
+6. Write clear commit messages in
+   [Conventional Commits](https://www.conventionalcommits.org/) style
+   (`feat:`, `fix:`, `docs:`, …) — it's what the project's history uses.
+7. Open the PR against `main` and describe what changed and why.
+
+**Adding an agent adapter?** Adapters live in
+[`src/adapters.ts`](src/adapters.ts); each one builds the agent's command and
+parses token usage (and, ideally, files-read) from its output. Add it to the
+built-in map, register its default instruction file in
+[`src/detect.ts`](src/detect.ts), and cover it in
+[`test/adapters.test.ts`](test/adapters.test.ts).
+
+By contributing, you agree that your contributions will be licensed under the
+project's MIT License.
+
+## License
+
+[MIT](./LICENSE) © BaconMan1168

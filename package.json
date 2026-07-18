@@ -3,6 +3,28 @@
   "version": "0.1.0",
   "description": "A/B test your coding-agent instruction files against real tasks from your own repo.",
   "type": "module",
+  "license": "MIT",
+  "author": "BaconMan1168",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BaconMan1168/optirule.git"
+  },
+  "homepage": "https://github.com/BaconMan1168/optirule#readme",
+  "bugs": {
+    "url": "https://github.com/BaconMan1168/optirule/issues"
+  },
+  "keywords": [
+    "claude",
+    "codex",
+    "coding-agent",
+    "agents",
+    "llm",
+    "benchmark",
+    "prompt-engineering",
+    "instructions",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
   "bin": {
     "optirule": "./dist/cli.js"
   },
