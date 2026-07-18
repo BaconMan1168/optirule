@@ -2,8 +2,8 @@
 
 A/B test your coding-agent instruction files (`CLAUDE.md`, `AGENTS.md`, …) against
 real tasks from your own repo. Linters check structure and optimizers guess —
-optirule **measures** whether your instructions actually make the agent perform
-better, and shows what each section costs in tokens.
+optirule **measures** whether your instructions actually make the agent work more
+efficiently, and shows what each section costs in tokens.
 
 ## Quick start
 
@@ -25,35 +25,43 @@ For every task, optirule runs your agent twice in isolated git worktrees:
 | `baseline` | hidden           |
 | `current`  | present          |
 
-Each variant runs `reps` times (agents are non-deterministic, so a single
-pass/fail is noise). The report shows the whole-file pass-rate delta, per-run
-token/runtime/files-changed metrics, and the static token cost of each `##`
-section — the deterministic half of "which sections earn their keep".
+Each variant runs `reps` times (default 5; agents are non-deterministic, so a
+single run is noise). Modern agents pass most tasks either way, so the **primary
+signal is efficiency, not pass/fail**: the report headlines the change in agent
+**token usage** (`current` vs `baseline`), shows runtime / files-changed / files-read
+alongside it, keeps pass rate as one demoted column, and pairs it all with a
+plain-language **recommendation**. Pass/fail is still recorded — the ~1% where a
+section actually breaks correctness is worth catching.
 
 ### Per-section impact (`--ablate`)
 
 `run --ablate` adds a leave-one-out sweep: for each `##` section it runs one more
-variant with that section removed, then reports `current pass rate − ablated pass
-rate`. Positive means removing the section hurt (it earns its keep); ~0 means no
-measurable effect; negative means it may hurt. This costs one extra variant per
-section, so the estimate scales with section count — that's why it's opt-in.
+variant with that section removed, then reports the **token impact** `ablated
+tokens − current tokens`. Positive means the agent burned more tokens without the
+section (it earns its keep); ~0 means no measurable effect; negative means the
+section made the agent burn more. This costs one extra variant per section, so
+the estimate scales with section count — that's why it's opt-in.
 
-Each row carries an honest signal label: **earns its keep**, **no measurable
-impact**, **actively hurts**, **too small to measure** (the section is too tiny a
-share of the file to attribute an effect to), or **low confidence** (too few runs).
+The keep/drop call keys off **tokens** — a section earns its keep only if removing
+it moves agent token usage past a ±20% neutral band (tokens vary ~2× run-to-run on
+the same task, so smaller effects are noise). Each row carries an honest signal:
+**earns its keep**, **no measurable impact**, **actively hurts**, **too small to
+measure** (too tiny a share of the file to attribute an effect to), or **low
+confidence** (too few runs, or the agent reports no token counts). Token effects
+are noisy, so raise `reps` (10+) for sharper per-section verdicts.
 
 `export --minimal` reads the last ablation run and writes `<file>.optirule.md`
 (or `--out <path>`) keeping only load-bearing sections — it drops sections whose
-removal measurably didn't hurt, never overwriting your original. The trimmed file
-is validated only against your task set, so sections it removes may still matter
-for tasks outside your benchmark.
+removal didn't cost tokens (dead weight) or freed tokens (actively hurts), never
+overwriting your original. The trimmed file is validated only against your task
+set, so sections it removes may still matter for tasks outside your benchmark.
 
 Tasks come from two sources, manual entries first:
 
 - **optirule.yml** — tasks you define, with a `success` command.
-- **Git history** — recent `fix:`/`bug`/`closes #` commits whose tests fail at
-  the parent commit. The commit message becomes the prompt; the task passes when
-  those tests pass again.
+- **Git history** — the most recent `feat:`/`fix:`/`bug`/`closes #` commits. Each
+  starts from the commit's parent with the commit message as the prompt; optirule
+  measures how efficiently the agent redoes that work.
 
 Before spending money, `run` prints the planned invocation count and instruction
 token cost and asks to proceed (`--yes` skips the prompt).
@@ -65,8 +73,8 @@ agent: claude                 # built-in adapter, or an object with a command:
 instruction_files:
   - CLAUDE.md
 test_command: node --test
-max_tasks: 5
-reps: 3
+max_tasks: 8
+reps: 5
 tasks:
   - id: fix-auth-expiry
     prompt: "Fix the auth failure when the token expires before refresh"
@@ -100,10 +108,13 @@ log); it reads `—` for adapters that don't expose it.
 
 ## Caveats
 
-- A pass-rate delta from few runs is within agent noise; the report flags low
-  confidence. Increase `reps` or add tasks to trust it.
+- Agent token usage varies ~2× run-to-run on the same task, so a delta from few
+  runs is within noise; the report flags low confidence. Increase `reps` or add
+  tasks to trust it.
 - A section that is a small share of the whole file can't be measured by
   ablation even when it matters; those rows read "too small to measure".
+- Efficiency, not correctness, is the headline — a section that measurably saves
+  no tokens can still matter for tasks outside your benchmark.
 
 ## Development
 
