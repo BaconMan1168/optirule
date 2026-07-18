@@ -6,6 +6,7 @@ const KNOWN_INSTRUCTION_FILES = [
   ".claude/CLAUDE.md",
   "AGENTS.md",
   "GEMINI.md",
+  "CONVENTIONS.md",
   ".cursorrules",
 ];
 

@@ -16,20 +16,31 @@ export interface AgentAdapter {
   buildCommand(prompt: string): SpawnSpec;
   /** Best-effort token total parsed from the agent's stdout. */
   parseTokenUsage(stdout: string): number | undefined;
+  /** Best-effort list of files the agent read, when its output exposes them. */
+  parseFilesRead?(stdout: string): string[] | undefined;
 }
 
-/** Sum the numeric token fields Claude Code reports under `usage`. */
-function sumClaudeUsage(usage: Record<string, unknown>): number | undefined {
-  const fields = [
-    "input_tokens",
-    "output_tokens",
-    "cache_creation_input_tokens",
-    "cache_read_input_tokens",
-  ];
+/** Parse a JSON-lines stream, skipping blank or malformed lines. */
+function parseJsonLines(stdout: string): unknown[] {
+  const objects: unknown[] = [];
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      objects.push(JSON.parse(trimmed));
+    } catch {
+      // Ignore non-JSON lines (progress text, banners, etc.).
+    }
+  }
+  return objects;
+}
+
+/** Sum a set of numeric fields on an object, or undefined if none are present. */
+function sumFields(obj: Record<string, unknown>, fields: string[]): number | undefined {
   let total = 0;
   let found = false;
   for (const f of fields) {
-    const v = usage[f];
+    const v = obj[f];
     if (typeof v === "number") {
       total += v;
       found = true;
@@ -38,7 +49,10 @@ function sumClaudeUsage(usage: Record<string, unknown>): number | undefined {
   return found ? total : undefined;
 }
 
-/** Claude Code CLI, run headless with autonomous edits and JSON output. */
+/**
+ * Claude Code CLI, run headless with autonomous edits and streaming JSON so we
+ * can read both token usage and the files it opened via `Read` tool calls.
+ */
 function claudeAdapter(instructionFiles: string[]): AgentAdapter {
   return {
     name: "claude",
@@ -46,18 +60,172 @@ function claudeAdapter(instructionFiles: string[]): AgentAdapter {
     buildCommand(prompt) {
       return {
         command: "claude",
-        args: ["-p", prompt, "--output-format", "json", "--permission-mode", "acceptEdits"],
+        args: [
+          "-p",
+          prompt,
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--permission-mode",
+          "acceptEdits",
+        ],
+      };
+    },
+    parseTokenUsage(stdout) {
+      // The final `result` event carries cumulative usage; fall back to any
+      // object with a usage field (e.g. a single-object non-streaming reply).
+      let usage: Record<string, unknown> | undefined;
+      for (const obj of parseJsonLines(stdout)) {
+        const o = obj as { usage?: Record<string, unknown> };
+        if (o.usage) usage = o.usage;
+      }
+      return usage
+        ? sumFields(usage, [
+            "input_tokens",
+            "output_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens",
+          ])
+        : undefined;
+    },
+    parseFilesRead(stdout) {
+      const objects = parseJsonLines(stdout);
+      if (objects.length === 0) return undefined;
+      const files: string[] = [];
+      for (const obj of objects) {
+        const content = (obj as { message?: { content?: unknown } }).message?.content;
+        if (!Array.isArray(content)) continue;
+        for (const block of content) {
+          const b = block as { type?: string; name?: string; input?: { file_path?: string } };
+          if (b.type === "tool_use" && b.name === "Read" && b.input?.file_path) {
+            if (!files.includes(b.input.file_path)) files.push(b.input.file_path);
+          }
+        }
+      }
+      return files;
+    },
+  };
+}
+
+/** OpenAI Codex CLI, run non-interactively with workspace-write sandbox and JSON. */
+function codexAdapter(instructionFiles: string[]): AgentAdapter {
+  return {
+    name: "codex",
+    instructionFiles,
+    buildCommand(prompt) {
+      return {
+        command: "codex",
+        args: ["exec", "--json", "--sandbox", "workspace-write", prompt],
+      };
+    },
+    parseTokenUsage(stdout) {
+      // `turn.completed` reports cumulative usage; cached/reasoning counts are
+      // subsets of input/output, so only base input + output are summed.
+      let usage: Record<string, unknown> | undefined;
+      for (const obj of parseJsonLines(stdout)) {
+        const o = obj as { type?: string; usage?: Record<string, unknown> };
+        if (o.type === "turn.completed" && o.usage) usage = o.usage;
+      }
+      return usage ? sumFields(usage, ["input_tokens", "output_tokens"]) : undefined;
+    },
+  };
+}
+
+/** Gemini CLI, run headless with --yolo auto-approve and structured JSON output. */
+function geminiAdapter(instructionFiles: string[]): AgentAdapter {
+  return {
+    name: "gemini",
+    instructionFiles,
+    buildCommand(prompt) {
+      return {
+        command: "gemini",
+        args: ["-p", prompt, "--output-format", "json", "--yolo"],
       };
     },
     parseTokenUsage(stdout) {
       try {
-        const json = JSON.parse(stdout) as { usage?: Record<string, unknown> };
-        return json.usage ? sumClaudeUsage(json.usage) : undefined;
+        const json = JSON.parse(stdout) as {
+          stats?: { models?: Record<string, { tokens?: { total?: unknown } }> };
+        };
+        const models = json.stats?.models;
+        if (!models) return undefined;
+        let total = 0;
+        let found = false;
+        for (const model of Object.values(models)) {
+          const t = model.tokens?.total;
+          if (typeof t === "number") {
+            total += t;
+            found = true;
+          }
+        }
+        return found ? total : undefined;
       } catch {
         return undefined;
       }
     },
   };
+}
+
+/** opencode CLI, run as a single headless prompt with JSON event output. */
+function opencodeAdapter(instructionFiles: string[]): AgentAdapter {
+  return {
+    name: "opencode",
+    instructionFiles,
+    buildCommand(prompt) {
+      return {
+        command: "opencode",
+        args: ["run", prompt, "--format", "json"],
+      };
+    },
+    parseTokenUsage(stdout) {
+      // Assistant message parts carry a `tokens` object; the last one seen holds
+      // the run's totals. cache counts are subsets, so only input/output/reasoning.
+      let tokens: Record<string, unknown> | undefined;
+      for (const obj of parseJsonLines(stdout)) {
+        const t = (obj as { tokens?: Record<string, unknown> }).tokens;
+        if (t) tokens = t;
+      }
+      return tokens ? sumFields(tokens, ["input", "output", "reasoning"]) : undefined;
+    },
+  };
+}
+
+/** aider, run one-shot without auto-commits so optirule can measure the diff. */
+function aiderAdapter(instructionFiles: string[]): AgentAdapter {
+  return {
+    name: "aider",
+    instructionFiles,
+    buildCommand(prompt) {
+      return {
+        command: "aider",
+        args: ["--yes-always", "--no-auto-commits", "--message", prompt],
+      };
+    },
+    parseTokenUsage(stdout) {
+      // aider prints e.g. "Tokens: 2.7k sent, 290 received." — take the last line.
+      const matches = [...stdout.matchAll(/Tokens:\s*([\d.]+[km]?)\s*sent,\s*([\d.]+[km]?)\s*received/gi)];
+      const last = matches.at(-1);
+      const sent = last?.[1];
+      const received = last?.[2];
+      if (sent === undefined || received === undefined) return undefined;
+      return parseAiderCount(sent) + parseAiderCount(received);
+    },
+    parseFilesRead(stdout) {
+      const files: string[] = [];
+      for (const m of stdout.matchAll(/^Added (.+?) to the chat\.?$/gim)) {
+        const path = m[1];
+        if (path !== undefined && !files.includes(path)) files.push(path);
+      }
+      return files;
+    },
+  };
+}
+
+/** Parse aider's abbreviated token counts like "2.7k" or "290". */
+function parseAiderCount(value: string): number {
+  const suffix = value.slice(-1).toLowerCase();
+  const scale = suffix === "k" ? 1e3 : suffix === "m" ? 1e6 : 1;
+  return Math.round(parseFloat(value) * scale);
 }
 
 /** Shell-quote a value for safe interpolation into a command template. */
@@ -94,10 +262,17 @@ export function resolveAdapter(
   if (typeof agent === "object") {
     return genericAdapter(agent.command, instructionFiles);
   }
-  if (agent === "claude") {
-    return claudeAdapter(instructionFiles);
-  }
+  const builtins: Record<string, (files: string[]) => AgentAdapter> = {
+    claude: claudeAdapter,
+    codex: codexAdapter,
+    gemini: geminiAdapter,
+    opencode: opencodeAdapter,
+    aider: aiderAdapter,
+  };
+  const factory = builtins[agent];
+  if (factory) return factory(instructionFiles);
   throw new Error(
-    `Unknown built-in agent "${agent}". Use "claude", or an object with a "command" template.`,
+    `Unknown built-in agent "${agent}". Use one of ${Object.keys(builtins).join(", ")}, ` +
+      `or an object with a "command" template.`,
   );
 }
