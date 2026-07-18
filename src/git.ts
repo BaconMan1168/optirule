@@ -33,20 +33,20 @@ export async function changedFiles(cwd: string): Promise<string[]> {
   return out ? out.split("\n") : [];
 }
 
-const FIX_PATTERN = "^fix|\\bbug\\b|closes #|resolves #";
+const COMMIT_PATTERN = "^feat|^fix|\\bbug\\b|closes #|resolves #";
 
 /**
  * Recent commits, newest first, with their first parent. Merge commits are
  * skipped since their "broken state" is unclear. By default only commits whose
- * subject matches a fix pattern are returned; `relaxed` drops that filter so
- * more candidates can be probed when strict matches are scarce.
+ * subject matches a feat/fix pattern are returned; `relaxed` drops that filter
+ * so more candidates surface when strict matches are scarce.
  */
 export async function findFixCommits(
   cwd: string,
   limit: number,
   relaxed = false,
 ): Promise<FixCommit[]> {
-  const grep = relaxed ? [] : ["--extended-regexp", `--grep=${FIX_PATTERN}`, "-i"];
+  const grep = relaxed ? [] : ["--extended-regexp", `--grep=${COMMIT_PATTERN}`, "-i"];
   const out = await git(
     ["log", `--max-count=${limit * 4}`, "--no-merges", ...grep, "--format=%H%x00%P%x00%s"],
     cwd,

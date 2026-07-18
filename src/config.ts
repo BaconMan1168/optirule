@@ -27,8 +27,8 @@ export interface OptiruleConfig {
 const DEFAULTS = {
   agent: "claude",
   test_command: "npm test",
-  max_tasks: 5,
-  reps: 3,
+  max_tasks: 8,
+  reps: 5,
 } as const;
 
 export const CONFIG_FILENAME = "optirule.yml";

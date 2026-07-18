@@ -1,9 +1,6 @@
 import type { OptiruleConfig } from "./config.js";
 import type { Task } from "./types.js";
 import { findFixCommits } from "./git.js";
-import { setupWorktree, teardownWorktree } from "./worktree.js";
-import { runShell } from "./exec.js";
-import { PROBE_DIR, PROBE_TIMEOUT_MS } from "./constants.js";
 
 /** Strip a conventional-commit prefix so the subject reads as a task prompt. */
 function cleanSubject(subject: string): string {
@@ -22,10 +19,11 @@ export function manualTasks(config: OptiruleConfig): Task[] {
 }
 
 /**
- * Extract tasks from fix commits. For each candidate the parent commit is
- * checked out and the test command run; only commits whose tests fail at the
- * parent become tasks, since a commit that fixed nothing measurable is noise.
- * Falls back to a relaxed commit search when strict matches are too few.
+ * Extract tasks from recent feat/fix commits: each becomes a task that starts
+ * from the commit's parent with the commit subject as its prompt. We no longer
+ * gate on "tests fail at the parent" — the run measures efficiency metrics
+ * (tokens, time, files) regardless of pass/fail, so any real unit of work is a
+ * valid task. Falls back to a relaxed commit search when strict matches are few.
  */
 export async function autoExtractTasks(
   repoDir: string,
@@ -37,27 +35,13 @@ export async function autoExtractTasks(
   const commits =
     strict.length >= needed ? strict : await findFixCommits(repoDir, needed, true);
 
-  const tasks: Task[] = [];
-  for (const commit of commits) {
-    if (tasks.length >= needed) break;
-    const path = `${repoDir}/${PROBE_DIR}/${commit.sha.slice(0, 10)}`;
-    try {
-      await setupWorktree(repoDir, commit.parent, path);
-      const result = await runShell(config.test_command, path, PROBE_TIMEOUT_MS);
-      if (result.exitCode !== 0) {
-        tasks.push({
-          id: `fix-${commit.sha.slice(0, 7)}`,
-          prompt: cleanSubject(commit.subject),
-          startRef: commit.parent,
-          successCommand: config.test_command,
-          source: "git-history",
-        });
-      }
-    } finally {
-      await teardownWorktree(repoDir, path);
-    }
-  }
-  return tasks;
+  return commits.slice(0, needed).map((commit) => ({
+    id: `commit-${commit.sha.slice(0, 7)}`,
+    prompt: cleanSubject(commit.subject),
+    startRef: commit.parent,
+    successCommand: config.test_command,
+    source: "git-history",
+  }));
 }
 
 /**
