@@ -28,7 +28,8 @@ export interface Section {
 /** Metrics collected from one task × variant × repetition. */
 export interface RunResult {
   taskId: string;
-  variant: Variant;
+  /** Variant id: "baseline", "current", or an "ablate-<section>" id. */
+  variant: string;
   /** 0-based repetition index. */
   rep: number;
   /** Whether the success command exited 0. */

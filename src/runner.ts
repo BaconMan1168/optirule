@@ -2,54 +2,60 @@ import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node
 import { dirname } from "node:path";
 import type { OptiruleConfig } from "./config.js";
 import type { AgentAdapter } from "./adapters.js";
-import type { Task, Variant, RunResult } from "./types.js";
+import type { Task, RunResult } from "./types.js";
+import type { VariantSpec } from "./variants.js";
+import { removeSection } from "./sections.js";
 import { setupWorktree, teardownWorktree } from "./worktree.js";
 import { changedFiles } from "./git.js";
 import { runSpec, runShell } from "./exec.js";
 import { RUNS_DIR, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constants.js";
 
-const VARIANTS: Variant[] = ["baseline", "current"];
-
 /** Called after each completed run so callers can report live progress. */
 export type ProgressFn = (result: RunResult) => void;
 
 /**
- * Put the worktree into the state a variant requires. `current` writes the
- * instruction file being tested (its present-day content, not the version at
- * the task's start ref); `baseline` removes it entirely.
+ * Put the worktree into the state a variant requires. `current` writes each
+ * instruction file's present-day content (not the version at the task's start
+ * ref); `baseline` removes them all; `ablate` writes them but with one section
+ * removed from its source file.
  */
 function applyVariant(
   worktree: string,
   instructionFiles: string[],
   contents: Map<string, string>,
-  variant: Variant,
+  variant: VariantSpec,
 ): void {
   for (const file of instructionFiles) {
     const dest = `${worktree}/${file}`;
-    if (variant === "current") {
-      const content = contents.get(file);
-      if (content === undefined) continue;
-      mkdirSync(dirname(dest), { recursive: true });
-      writeFileSync(dest, content);
-    } else if (existsSync(dest)) {
-      rmSync(dest);
+    if (variant.kind === "baseline") {
+      if (existsSync(dest)) rmSync(dest);
+      continue;
     }
+    const content = contents.get(file);
+    if (content === undefined) continue;
+    const toWrite =
+      variant.kind === "ablate" && variant.section.file === file
+        ? removeSection(content, variant.section)
+        : content;
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, toWrite);
   }
 }
 
-/** Run every repetition of both variants for one task, sequentially. */
+/** Run every repetition of every variant for one task, sequentially. */
 async function runTask(
   repoDir: string,
   adapter: AgentAdapter,
   task: Task,
   contents: Map<string, string>,
+  variants: VariantSpec[],
   reps: number,
   onProgress?: ProgressFn,
 ): Promise<RunResult[]> {
   const results: RunResult[] = [];
-  for (const variant of VARIANTS) {
+  for (const variant of variants) {
     for (let rep = 0; rep < reps; rep++) {
-      const path = `${repoDir}/${RUNS_DIR}/${task.id}/${variant}/rep-${rep}`;
+      const path = `${repoDir}/${RUNS_DIR}/${task.id}/${variant.id}/rep-${rep}`;
       try {
         await setupWorktree(repoDir, task.startRef, path);
         applyVariant(path, adapter.instructionFiles, contents, variant);
@@ -60,7 +66,7 @@ async function runTask(
         );
         const result: RunResult = {
           taskId: task.id,
-          variant,
+          variant: variant.id,
           rep,
           passed: check.exitCode === 0,
           durationMs: agent.durationMs,
@@ -87,18 +93,19 @@ function loadInstructionContents(repoDir: string, files: string[]): Map<string, 
   return contents;
 }
 
-/** Run all tasks across both variants and return every collected result. */
+/** Run all tasks across every variant and return every collected result. */
 export async function runAll(
   repoDir: string,
   config: OptiruleConfig,
   adapter: AgentAdapter,
   tasks: Task[],
+  variants: VariantSpec[],
   onProgress?: ProgressFn,
 ): Promise<RunResult[]> {
   const contents = loadInstructionContents(repoDir, adapter.instructionFiles);
   const all: RunResult[] = [];
   for (const task of tasks) {
-    all.push(...(await runTask(repoDir, adapter, task, contents, config.reps, onProgress)));
+    all.push(...(await runTask(repoDir, adapter, task, contents, variants, config.reps, onProgress)));
   }
   return all;
 }

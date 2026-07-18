@@ -12,4 +12,10 @@ describe("planRun", () => {
     const plan = planRun(4, 3, 500);
     expect(plan.instructionTokenSpend).toBe(4 * 3 * 500);
   });
+
+  it("scales invocations and token spend with the variant count under ablation", () => {
+    const plan = planRun(2, 3, 500, 5);
+    expect(plan.totalRuns).toBe(2 * 5 * 3);
+    expect(plan.instructionTokenSpend).toBe((5 - 1) * 2 * 3 * 500);
+  });
 });
