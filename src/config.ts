@@ -17,6 +17,8 @@ export type AgentSpec = string | { command: string };
 /** The optirule.yml file after parsing and defaulting. */
 export interface OptiruleConfig {
   agent: AgentSpec;
+  /** Extra CLI args appended to every built-in agent invocation, e.g. ["--model", "ollama_chat/qwen"]. */
+  agent_args: string[];
   instruction_files: string[];
   test_command: string;
   max_tasks: number;
@@ -45,6 +47,7 @@ export function loadConfig(dir: string): OptiruleConfig {
   }
   return {
     agent: raw.agent ?? DEFAULTS.agent,
+    agent_args: raw.agent_args ?? [],
     instruction_files: raw.instruction_files,
     test_command: raw.test_command ?? DEFAULTS.test_command,
     max_tasks: raw.max_tasks ?? DEFAULTS.max_tasks,

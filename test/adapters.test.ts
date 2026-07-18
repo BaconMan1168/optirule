@@ -162,4 +162,29 @@ describe("resolveAdapter", () => {
   it("rejects unknown built-in agents", () => {
     expect(() => resolveAdapter("nope", [])).toThrow(/Unknown built-in agent/);
   });
+
+  it("appends agent_args to a built-in adapter's command", () => {
+    const adapter = resolveAdapter("aider", ["CONVENTIONS.md"], ["--model", "ollama_chat/qwen"]);
+    const spec = adapter.buildCommand("fix it");
+    expect(spec.command).toBe("aider");
+    expect(spec.args).toEqual([
+      "--yes-always",
+      "--no-auto-commits",
+      "--message",
+      "fix it",
+      "--model",
+      "ollama_chat/qwen",
+    ]);
+  });
+
+  it("leaves token parsing intact when extra args are appended", () => {
+    const adapter = resolveAdapter("aider", ["CONVENTIONS.md"], ["--model", "openai/x"]);
+    expect(adapter.parseTokenUsage("Tokens: 2.0k sent, 500 received.")).toBe(2500);
+  });
+
+  it("ignores empty agent_args", () => {
+    const plain = resolveAdapter("aider", ["CONVENTIONS.md"]);
+    const withEmpty = resolveAdapter("aider", ["CONVENTIONS.md"], []);
+    expect(withEmpty.buildCommand("x").args).toEqual(plain.buildCommand("x").args);
+  });
 });

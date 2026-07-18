@@ -254,25 +254,48 @@ function genericAdapter(template: string, instructionFiles: string[]): AgentAdap
   };
 }
 
-/** Resolve the configured agent to a concrete adapter. */
+/** The built-in adapters, keyed by their `agent` name. */
+const BUILTIN_ADAPTERS: Record<string, (files: string[]) => AgentAdapter> = {
+  claude: claudeAdapter,
+  codex: codexAdapter,
+  gemini: geminiAdapter,
+  opencode: opencodeAdapter,
+  aider: aiderAdapter,
+};
+
+/** Names of every built-in agent, in adapter-registration order. */
+export const BUILTIN_AGENT_NAMES = Object.keys(BUILTIN_ADAPTERS);
+
+/** Wrap an adapter so `extraArgs` are appended to every command it builds. */
+function withExtraArgs(adapter: AgentAdapter, extraArgs: string[]): AgentAdapter {
+  if (extraArgs.length === 0) return adapter;
+  return {
+    ...adapter,
+    buildCommand(prompt) {
+      const spec = adapter.buildCommand(prompt);
+      return { ...spec, args: [...spec.args, ...extraArgs] };
+    },
+  };
+}
+
+/**
+ * Resolve the configured agent to a concrete adapter. `extraArgs` (from
+ * `agent_args`) are appended to every invocation of a built-in adapter, e.g.
+ * `["--model", "ollama_chat/qwen"]`; they are ignored for the generic
+ * command-template adapter, which bakes its arguments into the template.
+ */
 export function resolveAdapter(
   agent: string | { command: string },
   instructionFiles: string[],
+  extraArgs: string[] = [],
 ): AgentAdapter {
   if (typeof agent === "object") {
     return genericAdapter(agent.command, instructionFiles);
   }
-  const builtins: Record<string, (files: string[]) => AgentAdapter> = {
-    claude: claudeAdapter,
-    codex: codexAdapter,
-    gemini: geminiAdapter,
-    opencode: opencodeAdapter,
-    aider: aiderAdapter,
-  };
-  const factory = builtins[agent];
-  if (factory) return factory(instructionFiles);
+  const factory = BUILTIN_ADAPTERS[agent];
+  if (factory) return withExtraArgs(factory(instructionFiles), extraArgs);
   throw new Error(
-    `Unknown built-in agent "${agent}". Use one of ${Object.keys(builtins).join(", ")}, ` +
+    `Unknown built-in agent "${agent}". Use one of ${BUILTIN_AGENT_NAMES.join(", ")}, ` +
       `or an object with a "command" template.`,
   );
 }

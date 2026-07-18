@@ -36,7 +36,7 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
   if (detected && typeof agentSpec === "string" && detected === agentSpec) {
     console.log(`Detected agent runner: ${detected}.`);
   }
-  const adapter = resolveAdapter(agentSpec, config.instruction_files);
+  const adapter = resolveAdapter(agentSpec, config.instruction_files, config.agent_args);
   const sections = loadSections(repoDir, config.instruction_files);
   const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
   const ablate = options.ablate ?? false;
