@@ -95,12 +95,41 @@ output; the CLI must be on your `PATH`):
 | `gemini` | Gemini CLI | `GEMINI.md` |
 | `aider` | aider | `CONVENTIONS.md` |
 
+`optirule init` autodetects which of these CLIs are on your `PATH` and picks one
+— preferring the runner it's invoked from, then a CLI whose default instruction
+file is present — instead of always assuming `claude`.
+
 Anything else via a generic command template (no token or files-read parsing):
 
 ```yaml
 agent:
   command: "my-agent --model ollama/codestral --yes {prompt}"
 ```
+
+#### Extra agent flags (`agent_args`)
+
+`agent_args` appends flags to every built-in agent invocation, so you can pin a
+model or endpoint while keeping token/files-read parsing:
+
+```yaml
+agent: aider
+agent_args: ["--model", "ollama_chat/qwen2.5-coder"]
+```
+
+#### Local & self-hosted models (ollama, vLLM, OpenRouter)
+
+optirule benchmarks the **agent CLI**; the model is a setting *inside* that CLI,
+so you reach a local or hosted model *through* an adapter like `aider`. Point
+aider at the backend with its own env vars, then select the model with
+`agent_args` — token parsing keeps working:
+
+| Backend | aider env | `agent_args` model |
+| --- | --- | --- |
+| ollama | `OLLAMA_API_BASE=http://127.0.0.1:11434` | `["--model", "ollama_chat/<model>"]` |
+| vLLM (OpenAI-compatible) | `OPENAI_API_BASE=<url>`, `OPENAI_API_KEY=<key>` | `["--model", "openai/<model>"]` |
+| OpenRouter | `OPENROUTER_API_KEY=<key>` | `["--model", "openrouter/<vendor>/<model>"]` |
+
+Endpoints and keys stay in the agent's environment — optirule never handles them.
 
 The report shows **avg files read** alongside tokens and files changed when the
 adapter can report it (`claude` via its `Read` tool calls, `aider` from its chat
