@@ -8,8 +8,10 @@ better, and shows what each section costs in tokens.
 ## Quick start
 
 ```bash
-npx optirule init     # detect instruction files, scaffold optirule.yml
-npx optirule run      # benchmark: no instructions vs your instructions
+npx optirule init             # detect instruction files, scaffold optirule.yml
+npx optirule run              # benchmark: no instructions vs your instructions
+npx optirule run --ablate     # also measure each section's impact (leave-one-out)
+npx optirule export --minimal # write a trimmed file, keeping only load-bearing sections
 ```
 
 `run` writes a self-contained report to `.optirule/report.html`.
@@ -27,6 +29,24 @@ Each variant runs `reps` times (agents are non-deterministic, so a single
 pass/fail is noise). The report shows the whole-file pass-rate delta, per-run
 token/runtime/files-changed metrics, and the static token cost of each `##`
 section — the deterministic half of "which sections earn their keep".
+
+### Per-section impact (`--ablate`)
+
+`run --ablate` adds a leave-one-out sweep: for each `##` section it runs one more
+variant with that section removed, then reports `current pass rate − ablated pass
+rate`. Positive means removing the section hurt (it earns its keep); ~0 means no
+measurable effect; negative means it may hurt. This costs one extra variant per
+section, so the estimate scales with section count — that's why it's opt-in.
+
+Each row carries an honest signal label: **earns its keep**, **no measurable
+impact**, **actively hurts**, **too small to measure** (the section is too tiny a
+share of the file to attribute an effect to), or **low confidence** (too few runs).
+
+`export --minimal` reads the last ablation run and writes `<file>.optirule.md`
+(or `--out <path>`) keeping only load-bearing sections — it drops sections whose
+removal measurably didn't hurt, never overwriting your original. The trimmed file
+is validated only against your task set, so sections it removes may still matter
+for tasks outside your benchmark.
 
 Tasks come from two sources, manual entries first:
 
@@ -68,8 +88,8 @@ tasks:
 
 - A pass-rate delta from few runs is within agent noise; the report flags low
   confidence. Increase `reps` or add tasks to trust it.
-- Per-section *impact* (not just cost) needs an ablation sweep — coming in a
-  later version.
+- A section that is a small share of the whole file can't be measured by
+  ablation even when it matters; those rows read "too small to measure".
 
 ## Development
 
