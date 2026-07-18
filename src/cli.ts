@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { runInit } from "./commands/init.js";
 import { runBenchmark } from "./commands/run.js";
+import { runExport } from "./commands/export.js";
 
 const program = new Command();
 
@@ -21,9 +22,24 @@ program
   .description("Run the benchmark: baseline vs current instructions")
   .option("-y, --yes", "skip the cost confirmation prompt")
   .option("--agent <name>", "override the configured agent")
+  .option("--ablate", "also measure each section's impact via leave-one-out ablation")
   .action(async (options) => {
     try {
       await runBenchmark(process.cwd(), options);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("export")
+  .description("Emit a trimmed instruction file from the last --ablate run")
+  .option("--minimal", "drop sections whose removal did not hurt the pass rate")
+  .option("--out <path>", "output path (single instruction file only)")
+  .action((options) => {
+    try {
+      runExport(process.cwd(), options);
     } catch (error) {
       console.error(error instanceof Error ? error.message : error);
       process.exitCode = 1;
