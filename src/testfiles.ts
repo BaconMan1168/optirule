@@ -3,8 +3,13 @@ import { filesChangedBetween, fileAtRef } from "./git.js";
 
 /** Directory segments that mark a path as test code. */
 const TEST_DIR = /(^|\/)(test|tests|__tests__|spec|specs)\//i;
-/** Filename shapes that mark a file as test code across common ecosystems. */
-const TEST_FILENAME = /(^|\/)(test_[^/]+|[^/]+[._-](test|spec))\.[A-Za-z]+$|_test\.go$/i;
+/**
+ * Filename shapes that mark a file as test code across common ecosystems:
+ * a `test_` prefix, a `.`/`_`-separated `test`/`spec` suffix, or a bare
+ * `test`/`spec` stem. No hyphen separator — `ab-test.ts` is a plausible
+ * production filename, not a test.
+ */
+const TEST_FILENAME = /(^|\/)(test_[^/]+|[^/]+[._](test|spec)|test|spec)\.[A-Za-z]+$|_test\.go$/i;
 
 /** Whether a repo-relative path looks like test code rather than production code. */
 export function isTestFile(path: string): boolean {

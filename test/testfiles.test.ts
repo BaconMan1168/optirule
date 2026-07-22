@@ -15,6 +15,10 @@ describe("isTestFile", () => {
       "src/foo.test.ts",
       "src/foo.spec.js",
       "pkg/handler_test.go",
+      "src/ab_test.ts",
+      "test.ts",
+      "spec.ts",
+      "src/test.ts",
     ];
     for (const path of paths) expect(isTestFile(path), path).toBe(true);
   });
@@ -26,6 +30,8 @@ describe("isTestFile", () => {
       "src/protest/index.ts",
       "docs/testing.md",
       "src/runner.ts",
+      "src/ab-test.ts",
+      "docs/latest.md",
     ];
     for (const path of paths) expect(isTestFile(path), path).toBe(false);
   });
