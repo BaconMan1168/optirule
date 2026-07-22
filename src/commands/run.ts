@@ -46,13 +46,27 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
   console.log("Collecting tasks...");
   const candidates = await collectTasks(repoDir, config);
   console.log(`Found ${candidates.length} candidate task(s). Checking each is measurable...`);
-  const tasks = await keepMeasurableTasks(repoDir, candidates, (task, measurable) => {
-    if (!measurable) console.log(`  skipped ${task.id}: its tests already pass at the start ref.`);
+  const tasks = await keepMeasurableTasks(repoDir, candidates, (task, outcome) => {
+    switch (outcome) {
+      case "measurable":
+        console.log(`  checked ${task.id}: measurable.`);
+        break;
+      case "already-passing":
+        console.log(`  skipped ${task.id}: its tests already pass at the start ref.`);
+        break;
+      case "timed-out":
+        console.log(`  skipped ${task.id}: its success command timed out at the start ref.`);
+        break;
+      case "error":
+        console.log(`  skipped ${task.id}: failed to snapshot or probe it.`);
+        break;
+    }
   });
   if (tasks.length === 0) {
     throw new Error(
-      "No measurable tasks. Every candidate's tests already pass at its start ref, " +
-        "so no run could tell a working agent from an idle one. Add tasks to optirule.yml.",
+      "No measurable tasks. Every candidate's tests already pass at its start ref, timed out, " +
+        "or couldn't be probed at all — so no run could tell a working agent from an idle one. " +
+        "Add tasks to optirule.yml.",
     );
   }
   console.log(`${tasks.length} measurable task(s).`);

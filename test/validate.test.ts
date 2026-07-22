@@ -63,4 +63,43 @@ describe("keepMeasurableTasks", () => {
     ]);
     expect(kept.map((t) => t.id)).toEqual(["m"]);
   });
+
+  it("drops a task whose snapshot fails, but still probes a good task in the same batch", async () => {
+    const outcomes: Array<[string, string]> = [];
+    const kept = await keepMeasurableTasks(
+      dir,
+      [
+        task({ id: "bad", startRef: "not-a-real-ref", successCommand: "false" }),
+        task({
+          id: "good",
+          successCommand: "false",
+          testFiles: [{ path: "t.test", content: Buffer.from("x") }],
+        }),
+      ],
+      (t, outcome) => outcomes.push([t.id, outcome]),
+    );
+    expect(kept.map((t) => t.id)).toEqual(["good"]);
+    expect(outcomes).toEqual([
+      ["bad", "error"],
+      ["good", "measurable"],
+    ]);
+  });
+
+  it("drops a task whose probe times out, rather than treating a hang as measurable", async () => {
+    const outcomes: string[] = [];
+    const kept = await keepMeasurableTasks(
+      dir,
+      [
+        task({
+          id: "hangs",
+          successCommand: "sleep 5",
+          testFiles: [{ path: "t.test", content: Buffer.from("x") }],
+        }),
+      ],
+      (_t, outcome) => outcomes.push(outcome),
+      200, // ms — short-circuits SUCCESS_TIMEOUT_MS (5 min) so the test stays fast
+    );
+    expect(kept).toEqual([]);
+    expect(outcomes).toEqual(["timed-out"]);
+  });
 });
