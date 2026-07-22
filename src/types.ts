@@ -13,8 +13,22 @@ export interface Task {
   startRef: string;
   /** Shell command whose exit code 0 means the task passed. */
   successCommand: string;
+  /** Tests to restore before the success check. Empty for manual tasks. */
+  testFiles: TestFile[];
   /** Where the task came from, for reporting. */
   source: "manual" | "git-history";
+}
+
+/**
+ * A test file restored to its post-fix content before the success check runs.
+ * This is what makes pass/fail mean "did the task", not "didn't break anything":
+ * at the start ref these tests fail, and only a correct change makes them pass.
+ */
+export interface TestFile {
+  /** Repo-relative path. */
+  path: string;
+  /** Content at the fix commit. */
+  content: string;
 }
 
 /** A `##` section parsed from an instruction file, with its static token cost. */

@@ -14,6 +14,7 @@ export function manualTasks(config: OptiruleConfig): Task[] {
     prompt: t.prompt,
     startRef: t.start_ref ?? "HEAD",
     successCommand: t.success ?? config.test_command,
+    testFiles: [],
     source: "manual",
   }));
 }
@@ -40,6 +41,7 @@ export async function autoExtractTasks(
     prompt: cleanSubject(commit.subject),
     startRef: commit.parent,
     successCommand: config.test_command,
+    testFiles: [],
     source: "git-history",
   }));
 }
