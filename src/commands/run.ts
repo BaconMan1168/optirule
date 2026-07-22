@@ -6,6 +6,7 @@ import { parseSections } from "../sections.js";
 import type { ParsedSection } from "../sections.js";
 import { planVariants } from "../variants.js";
 import { collectTasks } from "../tasks.js";
+import { keepMeasurableTasks } from "../validate.js";
 import { runAll } from "../runner.js";
 import { analyze } from "../analyze.js";
 import { writeReport, writeAnalysis } from "../report.js";
@@ -43,8 +44,18 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
   const variants = planVariants(sections, ablate);
 
   console.log("Collecting tasks...");
-  const tasks = await collectTasks(repoDir, config);
-  console.log(`Found ${tasks.length} task(s).`);
+  const candidates = await collectTasks(repoDir, config);
+  console.log(`Found ${candidates.length} candidate task(s). Checking each is measurable...`);
+  const tasks = await keepMeasurableTasks(repoDir, candidates, (task, measurable) => {
+    if (!measurable) console.log(`  skipped ${task.id}: its tests already pass at the start ref.`);
+  });
+  if (tasks.length === 0) {
+    throw new Error(
+      "No measurable tasks. Every candidate's tests already pass at its start ref, " +
+        "so no run could tell a working agent from an idle one. Add tasks to optirule.yml.",
+    );
+  }
+  console.log(`${tasks.length} measurable task(s).`);
 
   const plan = planRun(tasks.length, config.reps, totalTokens, variants.length);
   console.log(`\n${formatPlan(plan)}\n`);
