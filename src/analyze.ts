@@ -35,6 +35,8 @@ export interface VariantSummary {
   avgDurationMs: number;
   avgTokens?: number;
   avgFilesChanged: number;
+  avgChurn: number;
+  avgToolCalls?: number;
   /** Average files read, when the adapter reports them; undefined otherwise. */
   avgFilesRead?: number;
 }
@@ -94,6 +96,9 @@ function summarize(variant: string, results: RunResult[]): VariantSummary {
   const filesReadCounts = results
     .filter((r) => r.filesRead !== undefined)
     .map((r) => r.filesRead!.length);
+  const toolCallCounts = results
+    .map((result) => result.toolCalls)
+    .filter((count): count is number => count !== undefined);
   const avg = (nums: number[]) => (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0);
   return {
     variant,
@@ -103,6 +108,8 @@ function summarize(variant: string, results: RunResult[]): VariantSummary {
     avgDurationMs: avg(results.map((r) => r.durationMs)),
     avgTokens: tokenValues.length ? avg(tokenValues) : undefined,
     avgFilesChanged: avg(results.map((r) => r.filesChanged.length)),
+    avgChurn: avg(results.map((result) => result.churn ?? 0)),
+    avgToolCalls: toolCallCounts.length ? avg(toolCallCounts) : undefined,
     avgFilesRead: filesReadCounts.length ? avg(filesReadCounts) : undefined,
   };
 }
