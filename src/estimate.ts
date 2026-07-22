@@ -7,6 +7,8 @@ export interface RunPlan {
   instructionTokens: number;
   /** Deterministic tokens spent solely on the instruction file across the run. */
   instructionTokenSpend: number;
+  /** Read-only scoring calls, one per run when the rubric contains judge rules. */
+  judgeCalls: number;
 }
 
 /**
@@ -19,6 +21,7 @@ export function planRun(
   reps: number,
   instructionTokens: number,
   variants = 2,
+  hasJudgeRules = false,
 ): RunPlan {
   return {
     taskCount,
@@ -27,6 +30,7 @@ export function planRun(
     totalRuns: taskCount * variants * reps,
     instructionTokens,
     instructionTokenSpend: (variants - 1) * taskCount * reps * instructionTokens,
+    judgeCalls: hasJudgeRules ? taskCount * variants * reps : 0,
   };
 }
 
@@ -40,6 +44,11 @@ export function formatPlan(plan: RunPlan): string {
   if (plan.variants > 2) {
     lines.push(
       `Ablation adds one variant per section, so cost scales with section count — this run is ${plan.variants - 2} sections beyond a default baseline-vs-current run.`,
+    );
+  }
+  if (plan.judgeCalls > 0) {
+    lines.push(
+      `Rubric judge rules add ${plan.judgeCalls} read-only model call(s), one after each agent run.`,
     );
   }
   return lines.join("\n");

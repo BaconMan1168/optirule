@@ -18,6 +18,11 @@ describe("planRun", () => {
     expect(plan.totalRuns).toBe(2 * 5 * 3);
     expect(plan.instructionTokenSpend).toBe((5 - 1) * 2 * 3 * 500);
   });
+
+  it("discloses one judge call per run when judge rules exist", () => {
+    const plan = planRun(2, 3, 500, 2, true);
+    expect(plan.judgeCalls).toBe(12);
+  });
 });
 
 describe("powerWarning", () => {

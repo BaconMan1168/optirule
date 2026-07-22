@@ -82,7 +82,13 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
   }
   console.log(`${tasks.length} measurable task(s).`);
 
-  const plan = planRun(tasks.length, config.reps, totalTokens, variants.length);
+  const plan = planRun(
+    tasks.length,
+    config.reps,
+    totalTokens,
+    variants.length,
+    rules.some((rule) => rule.check.kind === "judge"),
+  );
   console.log(`\n${formatPlan(plan)}\n`);
   const warning = powerWarning(tasks.length);
   if (warning) console.log(`⚠ ${warning}\n`);
