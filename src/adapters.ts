@@ -45,17 +45,25 @@ function parseJsonLines(stdout: string): unknown[] {
 
 /** Concatenate assistant text blocks from a JSON-lines transcript. */
 function textFromJsonLines(stdout: string): string {
+  const results: string[] = [];
   const parts: string[] = [];
   for (const obj of parseJsonLines(stdout)) {
-    const o = obj as { result?: unknown; message?: { content?: unknown } };
-    if (typeof o.result === "string") parts.push(o.result);
+    const o = obj as {
+      result?: unknown;
+      message?: { content?: unknown };
+      item?: { type?: string; text?: unknown };
+    };
+    if (typeof o.result === "string") results.push(o.result);
+    if (o.item?.type === "agent_message" && typeof o.item.text === "string") {
+      parts.push(o.item.text);
+    }
     if (!Array.isArray(o.message?.content)) continue;
     for (const block of o.message.content) {
       const b = block as { type?: string; text?: string };
       if (b.type === "text" && b.text) parts.push(b.text);
     }
   }
-  return parts.join("\n");
+  return results.at(-1) ?? parts.join("\n");
 }
 
 /** Every tool_use block in a JSON-lines transcript. */
