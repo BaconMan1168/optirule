@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { loadConfig } from "../config.js";
 import { parseSections, removeSection } from "../sections.js";
 import { readAnalysis } from "../report.js";
-import type { SectionImpact } from "../analyze.js";
+import type { SectionSignal } from "../analyze.js";
 
 export interface ExportOptions {
   minimal?: boolean;
@@ -11,11 +11,12 @@ export interface ExportOptions {
 
 /** The verbatim honesty caveat printed with every minimal export. */
 const CAVEAT =
-  "validated only against your optirule task set — sections removed here may matter for tasks not in your benchmark.";
+  "validated only against your optirule task set. Sections kept as never-exercised or " +
+  "single-task-signal were not proven useless — they were never put to the test.";
 
-/** Signals whose sections are safe to drop: measured, and removal did not hurt. */
-function isDroppable(signal: SectionImpact["signal"]): boolean {
-  return signal === "no-measurable-impact" || signal === "actively-hurts";
+/** Only demonstrated redundancy or harm is enough evidence to remove a section. */
+export function isDroppable(signal: SectionSignal): boolean {
+  return signal === "redundant" || signal === "harmful";
 }
 
 /** Default output path for a file: `CLAUDE.md` → `CLAUDE.optirule.md`. */
@@ -30,16 +31,16 @@ export function runExport(repoDir: string, options: ExportOptions): void {
   }
 
   const analysis = readAnalysis(repoDir);
-  if (!analysis?.sectionImpacts?.length) {
-    throw new Error("No ablation data found. Run `optirule run --ablate` first.");
+  if (!analysis?.compliance?.sections.length) {
+    throw new Error("No compliance data found. Run `optirule lint` then `optirule run` first.");
   }
 
   const config = loadConfig(repoDir);
   const dropByFile = new Map<string, Set<string>>();
-  for (const impact of analysis.sectionImpacts) {
-    if (!isDroppable(impact.signal)) continue;
-    if (!dropByFile.has(impact.file)) dropByFile.set(impact.file, new Set());
-    dropByFile.get(impact.file)!.add(impact.title);
+  for (const section of analysis.compliance.sections) {
+    if (!isDroppable(section.signal)) continue;
+    if (!dropByFile.has(section.file)) dropByFile.set(section.file, new Set());
+    dropByFile.get(section.file)!.add(section.title);
   }
 
   const filesWithDrops = config.instruction_files.filter((f) => (dropByFile.get(f)?.size ?? 0) > 0);
