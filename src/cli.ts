@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { runInit } from "./commands/init.js";
 import { runBenchmark } from "./commands/run.js";
 import { runExport } from "./commands/export.js";
+import { runLint } from "./commands/lint.js";
 
 const program = new Command();
 
@@ -15,6 +16,18 @@ program
   .description("Detect instruction files and scaffold optirule.yml")
   .action(() => {
     runInit(process.cwd());
+  });
+
+program
+  .command("lint")
+  .description("audit instruction files and write an editable rubric before benchmarking")
+  .action(async () => {
+    try {
+      await runLint(process.cwd());
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    }
   });
 
 program
