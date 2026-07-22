@@ -37,14 +37,22 @@ describe("keepMeasurableTasks", () => {
 
   it("keeps a task whose tests fail at the start ref", async () => {
     const kept = await keepMeasurableTasks(dir, [
-      task({ id: "real", successCommand: "false", testFiles: [{ path: "t.test", content: "x" }] }),
+      task({
+        id: "real",
+        successCommand: "false",
+        testFiles: [{ path: "t.test", content: Buffer.from("x") }],
+      }),
     ]);
     expect(kept.map((t) => t.id)).toEqual(["real"]);
   });
 
   it("drops a task whose tests already pass at the start ref", async () => {
     const kept = await keepMeasurableTasks(dir, [
-      task({ id: "vacuous", successCommand: "true", testFiles: [{ path: "t.test", content: "x" }] }),
+      task({
+        id: "vacuous",
+        successCommand: "true",
+        testFiles: [{ path: "t.test", content: Buffer.from("x") }],
+      }),
     ]);
     expect(kept).toEqual([]);
   });

@@ -68,7 +68,7 @@ describe("buildTestPatch", () => {
     head = git(dir, "rev-parse", "HEAD");
 
     const patch = await buildTestPatch(parent, head, dir);
-    expect(patch).toEqual([{ path: "test/a.test.ts", content: "expect(new)\n" }]);
+    expect(patch).toEqual([{ path: "test/a.test.ts", content: Buffer.from("expect(new)\n") }]);
   });
 
   it("returns an empty patch when the commit touched no tests", async () => {

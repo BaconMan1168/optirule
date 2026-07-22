@@ -39,12 +39,38 @@ describe("git ref helpers", () => {
     expect(changed.sort()).toEqual(["src.ts", "test/x.test.ts"]);
   });
 
+  it("preserves non-ASCII filenames exactly, rather than git's quoted-octal form", async () => {
+    writeFileSync(join(dir, "日本語.txt"), "x");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "add unicode file");
+    const unicodeHead = git(dir, "rev-parse", "HEAD");
+
+    const changed = await filesChangedBetween(head, unicodeHead, dir);
+    expect(changed).toEqual(["日本語.txt"]);
+  });
+
   it("reads a file's content at a ref", async () => {
-    expect(await fileAtRef(head, "src.ts", dir)).toBe("export const x = 2;\n");
-    expect(await fileAtRef(parent, "src.ts", dir)).toBe("export const x = 1;\n");
+    expect((await fileAtRef(head, "src.ts", dir))?.toString()).toBe("export const x = 2;\n");
+    expect((await fileAtRef(parent, "src.ts", dir))?.toString()).toBe("export const x = 1;\n");
+  });
+
+  it("round-trips content that is not valid UTF-8, byte for byte", async () => {
+    const bytes = Buffer.from([0x48, 0x69, 0xff, 0xfe, 0x0a]);
+    writeFileSync(join(dir, "binary.bin"), bytes);
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "add binary file");
+    const binHead = git(dir, "rev-parse", "HEAD");
+
+    expect(await fileAtRef(binHead, "binary.bin", dir)).toEqual(bytes);
   });
 
   it("returns undefined for a file absent at that ref", async () => {
     expect(await fileAtRef(parent, "test/x.test.ts", dir)).toBeUndefined();
+  });
+
+  it("rethrows when the ref itself is invalid, rather than treating it as a missing path", async () => {
+    await expect(fileAtRef("not-a-real-branch", "src.ts", dir)).rejects.toThrow(
+      /invalid object name/i,
+    );
   });
 });

@@ -27,8 +27,8 @@ export interface Task {
 export interface TestFile {
   /** Repo-relative path. */
   path: string;
-  /** Content at the fix commit. */
-  content: string;
+  /** Raw bytes at the fix commit; a Buffer so non-UTF-8 content survives verbatim. */
+  content: Buffer;
 }
 
 /** A `##` section parsed from an instruction file, with its static token cost. */

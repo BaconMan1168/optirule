@@ -65,7 +65,7 @@ describe("collectTasks auto-extraction", () => {
     const tasks = await collectTasks(dir, config());
     const crash = tasks.find((t) => t.prompt === "stop the crash")!;
     expect(crash.testFiles).toEqual([
-      { path: "test/c.test.ts", content: "expect(c)" },
+      { path: "test/c.test.ts", content: Buffer.from("expect(c)") },
     ]);
   });
 

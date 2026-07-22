@@ -23,20 +23,42 @@ export async function changedFiles(cwd: string): Promise<string[]> {
   return out ? out.split("\n") : [];
 }
 
-/** Run a git command without trimming, for content that must survive verbatim. */
-async function gitRaw(args: string[], cwd: string): Promise<string> {
+/** Run git untrimmed, for NUL-delimited output whose exact bytes (incl. trailing separators) matter. */
+async function gitRawText(args: string[], cwd: string): Promise<string> {
   const { stdout } = await execa("git", args, { cwd, stripFinalNewline: false });
   return stdout;
 }
 
-/** Files changed between two commits, oldest ref first. */
+/** Run git returning raw bytes, so file content that isn't valid UTF-8 survives untouched. */
+async function gitRaw(args: string[], cwd: string): Promise<Buffer> {
+  const { stdout } = await execa("git", args, {
+    cwd,
+    stripFinalNewline: false,
+    encoding: "buffer",
+  });
+  return Buffer.from(stdout);
+}
+
+/**
+ * Files changed between two commits, oldest ref first. Uses `-z` (NUL-terminated,
+ * unquoted paths) instead of newline splitting: git's default `core.quotePath`
+ * mangles non-ASCII paths into escaped octal strings otherwise.
+ */
 export async function filesChangedBetween(
   from: string,
   to: string,
   cwd: string,
 ): Promise<string[]> {
-  const out = await git(["diff", "--name-only", from, to], cwd);
-  return out ? out.split("\n") : [];
+  const out = await gitRawText(["diff", "--name-only", "-z", from, to], cwd);
+  return out.split("\0").filter((path) => path !== "");
+}
+
+/** True when git's stderr says the path is absent at this ref, not that the ref itself is bad. */
+function isMissingPathError(error: unknown): boolean {
+  const stderr = (error as { stderr?: Uint8Array }).stderr;
+  if (!stderr) return false;
+  const text = Buffer.from(stderr).toString();
+  return /does not exist in |exists on disk, but not in /.test(text);
 }
 
 /** A file's content at `ref`, or undefined when it does not exist there. */
@@ -44,11 +66,12 @@ export async function fileAtRef(
   ref: string,
   path: string,
   cwd: string,
-): Promise<string | undefined> {
+): Promise<Buffer | undefined> {
   try {
     return await gitRaw(["show", `${ref}:${path}`], cwd);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isMissingPathError(error)) return undefined;
+    throw error;
   }
 }
 
