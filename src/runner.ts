@@ -5,11 +5,15 @@ import type { OptiruleConfig } from "./config.js";
 import type { AgentAdapter } from "./adapters.js";
 import type { Task, RunResult, TestFile } from "./types.js";
 import type { VariantSpec } from "./variants.js";
+import type { Rule } from "./rubric.js";
+import type { RunContext } from "./checks.js";
 import { removeSection } from "./sections.js";
 import { createSnapshot, destroySnapshot, stageDependencies } from "./snapshot.js";
-import { changedFiles } from "./git.js";
+import { changedFiles, unifiedDiff, churnLines } from "./git.js";
 import { runSpec, runShell } from "./exec.js";
 import { SNAPSHOT_PREFIX, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constants.js";
+import { evaluateDeterministic, classifyFailure } from "./evaluate.js";
+import { judgeRun } from "./judge.js";
 
 /** Called after each completed run so callers can report live progress. */
 export type ProgressFn = (result: RunResult) => void;
@@ -65,6 +69,7 @@ async function runTask(
   task: Task,
   contents: Map<string, string>,
   variants: VariantSpec[],
+  rules: Rule[],
   reps: number,
   onProgress?: ProgressFn,
 ): Promise<RunResult[]> {
@@ -81,17 +86,37 @@ async function runTask(
         const changed = (await changedFiles(path)).filter(
           (f) => !adapter.instructionFiles.includes(f),
         );
+        const ctx: RunContext = {
+          filesChanged: changed,
+          diff: await unifiedDiff(path),
+          commands: adapter.parseCommands?.(agent.stdout) ?? [],
+          timedOut: agent.timedOut,
+        };
+        const churn = await churnLines(path);
+        const deterministic = evaluateDeterministic(rules, ctx);
+        const judged = await judgeRun(
+          adapter,
+          task.prompt,
+          rules.filter((rule) => rule.check.kind === "judge"),
+          ctx,
+        );
+        const verdicts = [...deterministic, ...judged];
         applyTestPatch(path, task.testFiles);
         const check = await runShell(task.successCommand, path, SUCCESS_TIMEOUT_MS);
+        const passed = check.exitCode === 0;
         const result: RunResult = {
           taskId: task.id,
           variant: variant.id,
           rep,
-          passed: check.exitCode === 0,
+          passed,
           durationMs: agent.durationMs,
           tokens: adapter.parseTokenUsage(agent.stdout),
           filesChanged: changed,
           filesRead: adapter.parseFilesRead?.(agent.stdout),
+          verdicts,
+          churn,
+          toolCalls: adapter.parseToolCalls?.(agent.stdout),
+          failure: classifyFailure(passed, ctx, verdicts),
         };
         results.push(result);
         onProgress?.(result);
@@ -120,6 +145,7 @@ export async function runAll(
   adapter: AgentAdapter,
   tasks: Task[],
   variants: VariantSpec[],
+  rules: Rule[] = [],
   onProgress?: ProgressFn,
 ): Promise<RunResult[]> {
   const contents = loadInstructionContents(repoDir, adapter.instructionFiles);
@@ -137,6 +163,7 @@ export async function runAll(
           task,
           contents,
           variants,
+          rules,
           config.reps,
           onProgress,
         )),

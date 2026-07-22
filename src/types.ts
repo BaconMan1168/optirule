@@ -38,6 +38,8 @@ export interface RuleVerdict {
   verdict: Verdict;
 }
 
+export type FailureCategory = "timed-out" | "no-op" | "ignored-instructions" | "wrong-code";
+
 /** A `##` section parsed from an instruction file, with its static token cost. */
 export interface Section {
   /** Heading text without the leading `##`. */
@@ -63,4 +65,12 @@ export interface RunResult {
   filesChanged: string[];
   /** Files the agent read, when the adapter can report them. */
   filesRead?: string[];
+  /** Per-rule outcomes for this run. */
+  verdicts: RuleVerdict[];
+  /** Lines added plus deleted. */
+  churn: number;
+  /** Total tool invocations, when the adapter reports them. */
+  toolCalls?: number;
+  /** Set only when the success check failed. */
+  failure?: FailureCategory;
 }

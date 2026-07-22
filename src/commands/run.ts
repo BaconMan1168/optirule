@@ -12,6 +12,7 @@ import { analyze } from "../analyze.js";
 import { writeReport, writeAnalysis } from "../report.js";
 import { planRun, formatPlan } from "../estimate.js";
 import { confirm } from "../prompt.js";
+import { loadRubric, RUBRIC_FILENAME } from "../rubric.js";
 
 export interface RunOptions {
   yes?: boolean;
@@ -38,6 +39,14 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
     console.log(`Detected agent runner: ${detected}.`);
   }
   const adapter = resolveAdapter(agentSpec, config.instruction_files, config.agent_args);
+  const rubric = loadRubric(repoDir);
+  if (!rubric) {
+    console.log(
+      `No ${RUBRIC_FILENAME} found — running without compliance scoring. ` +
+        "Run `optirule lint` first to measure whether your rules are followed.",
+    );
+  }
+  const rules = rubric?.rules ?? [];
   const sections = loadSections(repoDir, config.instruction_files);
   const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
   const ablate = options.ablate ?? false;
@@ -78,7 +87,7 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
     return;
   }
 
-  const results = await runAll(repoDir, config, adapter, tasks, variants, (r) => {
+  const results = await runAll(repoDir, config, adapter, tasks, variants, rules, (r) => {
     const secs = (r.durationMs / 1000).toFixed(0);
     console.log(`  ${r.taskId} · ${r.variant} · rep ${r.rep} → ${r.passed ? "pass" : "fail"} (${secs}s)`);
   });
