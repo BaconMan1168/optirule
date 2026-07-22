@@ -30,7 +30,7 @@ npx optirule export --minimal # write a trimmed file, keeping only load-bearing 
 
 ## How it works
 
-For every task, optirule runs your agent twice in isolated git worktrees:
+For every task, optirule runs your agent twice in a history-free snapshot:
 
 | Variant    | Instruction file |
 | ---------- | ---------------- |
@@ -38,12 +38,16 @@ For every task, optirule runs your agent twice in isolated git worktrees:
 | `current`  | present          |
 
 Each variant runs `reps` times (default 5; agents are non-deterministic, so a
-single run is noise). Modern agents pass most tasks either way, so the **primary
-signal is efficiency, not pass/fail**: the report headlines the change in agent
-**token usage** (`current` vs `baseline`), shows runtime / files-changed / files-read
-alongside it, keeps pass rate as one demoted column, and pairs it all with a
-plain-language **recommendation**. Pass/fail is still recorded — the ~1% where a
-section actually breaks correctness is worth catching.
+single run is noise). Every run happens in a **history-free snapshot** of your
+repo at the task's start commit — one commit, no future history — so the agent
+cannot read the commit that solves its own task.
+
+For tasks taken from git history, success is the commit's own tests: optirule
+restores the test files the fix commit touched, at their post-fix content, after
+the agent finishes and after its diff has been measured. Those tests fail at the
+start commit and pass only if the agent actually did the work, so **pass/fail
+measures task completion**. Token usage, runtime, files changed, and files read
+are reported alongside it as cost.
 
 ### Per-section impact (`--ablate`)
 
@@ -71,9 +75,11 @@ set, so sections it removes may still matter for tasks outside your benchmark.
 Tasks come from two sources, manual entries first:
 
 - **optirule.yml** — tasks you define, with a `success` command.
-- **Git history** — the most recent `feat:`/`fix:`/`bug`/`closes #` commits. Each
-  starts from the commit's parent with the commit message as the prompt; optirule
-  measures how efficiently the agent redoes that work.
+- **Git history** — the most recent `feat:`/`fix:`/`bug`/`closes #` commits that
+  **changed test files**. Each starts from the commit's parent with the commit
+  message as the prompt, and is scored against that commit's tests. Commits with
+  no test change are skipped, as are commits whose tests already pass at the
+  parent — neither can distinguish a working agent from an idle one.
 
 Before spending money, `run` prints the planned invocation count and instruction
 token cost and asks to proceed (`--yes` skips the prompt).
@@ -149,9 +155,12 @@ log); it reads `—` for adapters that don't expose it.
 
 ## Caveats
 
-- Agent token usage varies ~2× run-to-run on the same task, so a delta from few
-  runs is within noise; the report flags low confidence. Increase `reps` or add
-  tasks to trust it.
+- A task is only as good as the test the fix commit shipped. A thin test scores a
+  thin solution as a pass.
+- Commit subjects are terse prompts. A task whose commit message does not explain
+  the intent may be unsolvable for reasons unrelated to your instructions.
+- Agent token usage varies ~2× run-to-run on the same task, so token deltas from
+  few runs are within noise; the report flags low confidence.
 - A section that is a small share of the whole file can't be measured by
   ablation even when it matters; those rows read "too small to measure".
 - Efficiency, not correctness, is the headline — a section that measurably saves
