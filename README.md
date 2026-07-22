@@ -163,8 +163,9 @@ log); it reads `—` for adapters that don't expose it.
   few runs are within noise; the report flags low confidence.
 - A section that is a small share of the whole file can't be measured by
   ablation even when it matters; those rows read "too small to measure".
-- Efficiency, not correctness, is the headline — a section that measurably saves
-  no tokens can still matter for tasks outside your benchmark.
+- The per-section keep/drop call still keys off tokens rather than pass/fail, so
+  a section that measurably saves no tokens can still matter for tasks outside
+  your benchmark.
 
 ## Development
 
