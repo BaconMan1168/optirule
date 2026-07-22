@@ -59,3 +59,48 @@ export function checkCommandUsed(check: Check, ctx: RunContext): Verdict {
   }
   return "followed";
 }
+
+function diffLines(diff: string): { added: string[]; removed: string[] } {
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added.push(line.slice(1));
+    else if (line.startsWith("-")) removed.push(line.slice(1));
+  }
+  return { added, removed };
+}
+
+export function checkPublicApiPreserved(ctx: RunContext): Verdict {
+  const { added, removed } = diffLines(ctx.diff);
+  const removedExports = removed.filter((line) => /^\s*export\b/.test(line));
+  if (removedExports.length === 0) return "not-applicable";
+  const addedSet = new Set(added.map((line) => line.trim()));
+  return removedExports.every((line) => addedSet.has(line.trim())) ? "followed" : "violated";
+}
+
+function envNames(lines: string[]): Set<string> {
+  const names = new Set<string>();
+  const patterns = [
+    /process\.env\.([A-Z_][A-Z0-9_]*)/gi,
+    /process\.env\[\s*["'`]([^"'`]+)["'`]\s*\]/gi,
+    /import\.meta\.env\.([A-Z_][A-Z0-9_]*)/gi,
+  ];
+  for (const line of lines) {
+    for (const pattern of patterns) {
+      for (const match of line.matchAll(pattern)) names.add(match[1]!);
+    }
+  }
+  return names;
+}
+
+export function checkNoNewEnvVars(ctx: RunContext): Verdict {
+  const { added, removed } = diffLines(ctx.diff);
+  const introduced = envNames(added);
+  if (introduced.size === 0) return "not-applicable";
+  const existing = envNames(removed);
+  for (const name of introduced) {
+    if (!existing.has(name)) return "violated";
+  }
+  return "followed";
+}

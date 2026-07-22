@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { globToRegExp, checkFilesTouched, checkCommandUsed } from "../src/checks.js";
+import {
+  globToRegExp,
+  checkFilesTouched,
+  checkCommandUsed,
+  checkPublicApiPreserved,
+  checkNoNewEnvVars,
+} from "../src/checks.js";
 import type { RunContext } from "../src/checks.js";
 
 function ctx(overrides: Partial<RunContext> = {}): RunContext {
@@ -44,5 +50,30 @@ describe("checkCommandUsed", () => {
   });
   it("lets a banned command override a required command", () => {
     expect(checkCommandUsed({ kind: "command-used", require: "npm test", banned: ["jest"] }, ctx({ commands: ["npm test", "npx jest"] }))).toBe("violated");
+  });
+});
+
+describe("checkPublicApiPreserved", () => {
+  it("is not-applicable when no export is removed", () => {
+    expect(checkPublicApiPreserved(ctx({ diff: "+export function added() {}\n" }))).toBe("not-applicable");
+  });
+  it("detects a removed exported signature", () => {
+    expect(checkPublicApiPreserved(ctx({ diff: "-export function gone() {}\n+function gone() {}\n" }))).toBe("violated");
+  });
+  it("accepts an export line re-added verbatim", () => {
+    expect(checkPublicApiPreserved(ctx({ diff: "-export function same() {}\n+export function same() {}\n" }))).toBe("followed");
+  });
+});
+
+describe("checkNoNewEnvVars", () => {
+  it("is not-applicable without environment reads", () => {
+    expect(checkNoNewEnvVars(ctx({ diff: "+const x = 1;\n" }))).toBe("not-applicable");
+  });
+  it("detects new dot, bracket, and import.meta names", () => {
+    expect(checkNoNewEnvVars(ctx({ diff: "+process.env.NEW_KEY\n" }))).toBe("violated");
+    expect(checkNoNewEnvVars(ctx({ diff: "+process.env['NEW_ONE']\n+import.meta.env.ALSO_NEW\n" }))).toBe("violated");
+  });
+  it("accepts names already present in removed lines", () => {
+    expect(checkNoNewEnvVars(ctx({ diff: "-process.env.API_KEY\n+process.env.API_KEY ?? ''\n" }))).toBe("followed");
   });
 });
