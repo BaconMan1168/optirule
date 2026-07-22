@@ -1,5 +1,31 @@
 import type { RunResult, Section } from "./types.js";
+import type { FailureCategory } from "./types.js";
 import type { VariantSpec } from "./variants.js";
+import type { Rule } from "./rubric.js";
+import { bootstrapCI, mean } from "./stats.js";
+
+export type SectionSignal =
+  | "earns-its-keep"
+  | "single-task-signal"
+  | "redundant"
+  | "never-exercised"
+  | "harmful";
+
+export interface SectionCompliance {
+  file: string;
+  title: string;
+  mistakesAvoided: number;
+  tasksImproved: number;
+  applicableRuns: number;
+  signal: SectionSignal;
+}
+
+export interface ComplianceAnalysis {
+  mistakesAvoided: number;
+  mistakesAvoidedCI: [number, number];
+  sections: SectionCompliance[];
+  failures: Record<string, Partial<Record<FailureCategory, number>>>;
+}
 
 export interface VariantSummary {
   variant: string;
@@ -46,6 +72,8 @@ export interface Analysis {
   sections: Section[];
   totalInstructionTokens: number;
   taskCount: number;
+  /** Rule-following comparison between baseline and current. */
+  compliance: ComplianceAnalysis;
   /** Per-section token impact, populated only for `--ablate` runs. */
   sectionImpacts?: SectionImpact[];
   /** Plain-language guidance generated from the deltas. */
@@ -143,23 +171,38 @@ function recommend(
   tokenDeltaPct: number | undefined,
   totalInstructionTokens: number,
   impacts: SectionImpact[] | undefined,
+  compliance: ComplianceAnalysis,
 ): string[] {
   const lines: string[] = [];
   const passNote = `Pass rate ${current.passed}/${current.runs} (current) vs ${baseline.passed}/${baseline.runs} (baseline).`;
 
-  if (tokenDeltaPct === undefined) {
-    lines.push(`Token usage unavailable for this agent — judging on pass rate. ${passNote}`);
-  } else if (tokenDeltaPct <= -OVERALL_BAND_PCT) {
+  if (compliance.sections.length === 0) {
+    lines.push("No rubric — nothing measured about rule-following. Run `optirule lint`.");
+  } else if (compliance.mistakesAvoidedCI[0] > 0) {
     lines.push(
-      `Your instructions cut agent token use ~${Math.abs(tokenDeltaPct)}% vs no instructions — worth keeping, the file pays for its static cost. ${passNote}`,
-    );
-  } else if (tokenDeltaPct >= OVERALL_BAND_PCT) {
-    lines.push(
-      `Your instructions raise agent token use ~${tokenDeltaPct}% and add ~${totalInstructionTokens.toLocaleString()} static tokens/run — consider trimming unless pass rate justifies it. ${passNote}`,
+      `Your instructions prevented ${compliance.mistakesAvoided} rule violation(s) that the agent made without them ` +
+        `(95% CI ${compliance.mistakesAvoidedCI[0].toFixed(1)} to ${compliance.mistakesAvoidedCI[1].toFixed(1)} per task).`,
     );
   } else {
     lines.push(
-      `Your instructions show no measurable change in agent token use but add ~${totalInstructionTokens.toLocaleString()} static tokens/run — consider trimming. ${passNote}`,
+      `No measurable reduction in rule violations (95% CI ${compliance.mistakesAvoidedCI[0].toFixed(1)} to ` +
+        `${compliance.mistakesAvoidedCI[1].toFixed(1)} per task spans zero). Add tasks before trimming anything.`,
+    );
+  }
+
+  if (tokenDeltaPct === undefined) {
+    lines.push(`Token cost unavailable for this agent. ${passNote}`);
+  } else if (tokenDeltaPct <= -OVERALL_BAND_PCT) {
+    lines.push(
+      `Token cost: ${Math.abs(tokenDeltaPct)}% fewer agent tokens vs no instructions. ${passNote}`,
+    );
+  } else if (tokenDeltaPct >= OVERALL_BAND_PCT) {
+    lines.push(
+      `Token cost: ${tokenDeltaPct}% more agent tokens plus ~${totalInstructionTokens.toLocaleString()} static tokens/run. ${passNote}`,
+    );
+  } else {
+    lines.push(
+      `Token cost: no measurable agent-token change, plus ~${totalInstructionTokens.toLocaleString()} static tokens/run. ${passNote}`,
     );
   }
 
@@ -186,6 +229,7 @@ export function analyze(
   sections: Section[],
   taskCount: number,
   ablated?: VariantSpec[],
+  rules: Rule[] = [],
 ): Analysis {
   const baseline = summarize("baseline", results.filter((r) => r.variant === "baseline"));
   const current = summarize("current", results.filter((r) => r.variant === "current"));
@@ -197,6 +241,7 @@ export function analyze(
   const impacts = ablated?.length
     ? sectionImpacts(results, current, ablated, totalInstructionTokens)
     : undefined;
+  const compliance = analyzeCompliance(results, rules);
   return {
     variants: [baseline, current],
     passRateDeltaPct: (current.passRate - baseline.passRate) * 100,
@@ -205,7 +250,110 @@ export function analyze(
     sections,
     totalInstructionTokens,
     taskCount,
+    compliance,
     sectionImpacts: impacts,
-    recommendation: recommend(baseline, current, tokenDeltaPct, totalInstructionTokens, impacts),
+    recommendation: recommend(
+      baseline,
+      current,
+      tokenDeltaPct,
+      totalInstructionTokens,
+      impacts,
+      compliance,
+    ),
+  };
+}
+
+const MIN_TASKS_IMPROVED = 2;
+
+function violationsIn(result: RunResult, ruleIds: Set<string>): number {
+  return (result.verdicts ?? []).filter(
+    (verdict) => ruleIds.has(verdict.ruleId) && verdict.verdict === "violated",
+  ).length;
+}
+
+function applicableIn(result: RunResult, ruleIds: Set<string>): boolean {
+  return (result.verdicts ?? []).some(
+    (verdict) => ruleIds.has(verdict.ruleId) && verdict.verdict !== "not-applicable",
+  );
+}
+
+function classifySection(
+  mistakesAvoided: number,
+  tasksImproved: number,
+  applicableRuns: number,
+): SectionSignal {
+  if (applicableRuns === 0) return "never-exercised";
+  if (mistakesAvoided < 0) return "harmful";
+  if (mistakesAvoided === 0) return "redundant";
+  return tasksImproved >= MIN_TASKS_IMPROVED ? "earns-its-keep" : "single-task-signal";
+}
+
+export function analyzeCompliance(results: RunResult[], rules: Rule[]): ComplianceAnalysis {
+  const allIds = new Set(rules.map((rule) => rule.id));
+  const tasks = [...new Set(results.map((result) => result.taskId))];
+  const forVariant = (variant: string) => results.filter((result) => result.variant === variant);
+  const sectionRules = new Map<string, { file: string; title: string; ids: Set<string> }>();
+  for (const rule of rules) {
+    const key = `${rule.file}::${rule.section}`;
+    if (!sectionRules.has(key)) {
+      sectionRules.set(key, { file: rule.file, title: rule.section, ids: new Set() });
+    }
+    sectionRules.get(key)!.ids.add(rule.id);
+  }
+
+  const perTaskDelta = tasks.map((taskId) => {
+    const baseline = forVariant("baseline").filter((result) => result.taskId === taskId);
+    const current = forVariant("current").filter((result) => result.taskId === taskId);
+    return (
+      mean(baseline.map((result) => violationsIn(result, allIds))) -
+      mean(current.map((result) => violationsIn(result, allIds)))
+    );
+  });
+
+  const sections: SectionCompliance[] = [];
+  for (const { file, title, ids } of sectionRules.values()) {
+    let mistakesAvoided = 0;
+    let tasksImproved = 0;
+    let applicableRuns = 0;
+    for (const taskId of tasks) {
+      const baseline = forVariant("baseline").filter((result) => result.taskId === taskId);
+      const current = forVariant("current").filter((result) => result.taskId === taskId);
+      const baselineViolations = baseline.reduce(
+        (sum, result) => sum + violationsIn(result, ids),
+        0,
+      );
+      const currentViolations = current.reduce(
+        (sum, result) => sum + violationsIn(result, ids),
+        0,
+      );
+      mistakesAvoided += baselineViolations - currentViolations;
+      if (baselineViolations > currentViolations) tasksImproved++;
+      applicableRuns += [...baseline, ...current].filter((result) =>
+        applicableIn(result, ids),
+      ).length;
+    }
+    sections.push({
+      file,
+      title,
+      mistakesAvoided,
+      tasksImproved,
+      applicableRuns,
+      signal: classifySection(mistakesAvoided, tasksImproved, applicableRuns),
+    });
+  }
+
+  const failures: ComplianceAnalysis["failures"] = {};
+  for (const result of results) {
+    if (!result.failure) continue;
+    failures[result.variant] ??= {};
+    failures[result.variant]![result.failure] =
+      (failures[result.variant]![result.failure] ?? 0) + 1;
+  }
+
+  return {
+    mistakesAvoided: sections.reduce((sum, section) => sum + section.mistakesAvoided, 0),
+    mistakesAvoidedCI: bootstrapCI(perTaskDelta),
+    sections,
+    failures,
   };
 }

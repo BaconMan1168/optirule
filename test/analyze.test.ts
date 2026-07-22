@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { analyze } from "../src/analyze.js";
+import { analyze, analyzeCompliance } from "../src/analyze.js";
+import type { Rule } from "../src/rubric.js";
 import type { RunResult } from "../src/types.js";
 import type { VariantSpec } from "../src/variants.js";
 import type { ParsedSection } from "../src/sections.js";
@@ -18,6 +19,8 @@ function runs(
     tokens: opts.tokens,
     filesChanged: ["a.ts"],
     filesRead: opts.filesRead,
+    verdicts: [],
+    churn: 0,
   }));
 }
 
@@ -119,6 +122,56 @@ describe("analyze", () => {
     const impact = a.sectionImpacts![0]!;
     expect(impact.tokenImpact).toBeUndefined();
     expect(impact.signal).toBe("low-confidence");
+  });
+});
+
+describe("analyzeCompliance", () => {
+  const rules: Rule[] = [
+    { id: "no-dist", file: "CLAUDE.md", section: "Layout", text: "never edit dist", check: { kind: "files-touched", forbid: ["dist/**"] } },
+    { id: "guardrail", file: "CLAUDE.md", section: "Secrets", text: "never commit secrets", check: { kind: "judge", question: "secrets?" } },
+  ];
+  const run = (taskId: string, variant: string, ruleId: string, verdict: "followed" | "violated" | "not-applicable"): RunResult => ({
+    taskId, variant, rep: 0, passed: true, durationMs: 1, filesChanged: ["a.ts"],
+    verdicts: [{ ruleId, verdict }], churn: 1,
+  });
+
+  it("counts mistakes avoided and requires improvement on two tasks", () => {
+    const results = [
+      run("t1", "baseline", "no-dist", "violated"), run("t1", "current", "no-dist", "followed"),
+      run("t2", "baseline", "no-dist", "violated"), run("t2", "current", "no-dist", "followed"),
+    ];
+    const analysis = analyzeCompliance(results, rules);
+    expect(analysis.mistakesAvoided).toBe(2);
+    expect(analysis.sections.find((section) => section.title === "Layout")).toMatchObject({ tasksImproved: 2, signal: "earns-its-keep" });
+  });
+
+  it("distinguishes one-task, redundant, never-exercised, and harmful signals", () => {
+    const single = analyzeCompliance([
+      run("t1", "baseline", "no-dist", "violated"), run("t1", "current", "no-dist", "followed"),
+    ], rules).sections.find((section) => section.title === "Layout")!;
+    expect(single.signal).toBe("single-task-signal");
+    const redundant = analyzeCompliance([
+      run("t1", "baseline", "no-dist", "followed"), run("t1", "current", "no-dist", "followed"),
+    ], rules).sections.find((section) => section.title === "Layout")!;
+    expect(redundant.signal).toBe("redundant");
+    const never = analyzeCompliance([
+      run("t1", "baseline", "guardrail", "not-applicable"), run("t1", "current", "guardrail", "not-applicable"),
+    ], rules).sections.find((section) => section.title === "Secrets")!;
+    expect(never.signal).toBe("never-exercised");
+    const harmful = analyzeCompliance([
+      run("t1", "baseline", "no-dist", "followed"), run("t1", "current", "no-dist", "violated"),
+    ], rules).sections.find((section) => section.title === "Layout")!;
+    expect(harmful.signal).toBe("harmful");
+  });
+
+  it("summarizes failure categories per condition", () => {
+    const results = [
+      { ...run("t1", "baseline", "no-dist", "followed"), passed: false, failure: "no-op" as const },
+      { ...run("t1", "current", "no-dist", "followed"), passed: false, failure: "wrong-code" as const },
+    ];
+    const analysis = analyzeCompliance(results, rules);
+    expect(analysis.failures.baseline["no-op"]).toBe(1);
+    expect(analysis.failures.current["wrong-code"]).toBe(1);
   });
 });
 

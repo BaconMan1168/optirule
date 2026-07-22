@@ -97,6 +97,7 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
     sections,
     tasks.length,
     ablate ? variants.filter((v) => v.kind === "ablate") : undefined,
+    rules,
   );
   const path = writeReport(repoDir, analysis);
   writeAnalysis(repoDir, analysis);
