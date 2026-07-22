@@ -23,6 +23,23 @@ export async function changedFiles(cwd: string): Promise<string[]> {
   return out ? out.split("\n") : [];
 }
 
+/** The working tree's unified diff against HEAD. */
+export function unifiedDiff(cwd: string): Promise<string> {
+  return git(["diff", "--unified=3"], cwd);
+}
+
+/** Lines added plus lines deleted in the working tree — a code-churn signal. */
+export async function churnLines(cwd: string): Promise<number> {
+  const out = await git(["diff", "--numstat"], cwd);
+  if (!out) return 0;
+  let total = 0;
+  for (const line of out.split("\n")) {
+    const [added, deleted] = line.split("\t");
+    total += (Number(added) || 0) + (Number(deleted) || 0);
+  }
+  return total;
+}
+
 /** Run git untrimmed, for NUL-delimited output whose exact bytes (incl. trailing separators) matter. */
 async function gitRawText(args: string[], cwd: string): Promise<string> {
   const { stdout } = await execa("git", args, { cwd, stripFinalNewline: false });

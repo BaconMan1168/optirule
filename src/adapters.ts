@@ -22,6 +22,10 @@ export interface AgentAdapter {
   parseTokenUsage(stdout: string): number | undefined;
   /** Best-effort list of files the agent read, when its output exposes them. */
   parseFilesRead?(stdout: string): string[] | undefined;
+  /** Shell commands the agent ran, when its output exposes them. */
+  parseCommands?(stdout: string): string[] | undefined;
+  /** Total tool invocations, as an effort signal. */
+  parseToolCalls?(stdout: string): number | undefined;
 }
 
 /** Parse a JSON-lines stream, skipping blank or malformed lines. */
@@ -52,6 +56,32 @@ function textFromJsonLines(stdout: string): string {
     }
   }
   return parts.join("\n");
+}
+
+/** Every tool_use block in a JSON-lines transcript. */
+function toolUses(stdout: string): { name?: string; input?: Record<string, unknown> }[] {
+  const uses: { name?: string; input?: Record<string, unknown> }[] = [];
+  for (const obj of parseJsonLines(stdout)) {
+    const content = (obj as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const use = block as { type?: string; name?: string; input?: Record<string, unknown> };
+      if (use.type === "tool_use") uses.push({ name: use.name, input: use.input });
+    }
+  }
+  return uses;
+}
+
+function commandsFromToolUses(stdout: string): string[] | undefined {
+  const commands = toolUses(stdout)
+    .filter((use) => use.name === "Bash" && typeof use.input?.command === "string")
+    .map((use) => use.input!.command as string);
+  return commands.length ? commands : undefined;
+}
+
+function toolCallCount(stdout: string): number | undefined {
+  const uses = toolUses(stdout);
+  return uses.length ? uses.length : undefined;
 }
 
 /** Sum a set of numeric fields on an object, or undefined if none are present. */
@@ -130,6 +160,8 @@ function claudeAdapter(instructionFiles: string[]): AgentAdapter {
       }
       return files;
     },
+    parseCommands: commandsFromToolUses,
+    parseToolCalls: toolCallCount,
   };
 }
 
@@ -231,6 +263,8 @@ function opencodeAdapter(instructionFiles: string[]): AgentAdapter {
       }
       return tokens ? sumFields(tokens, ["input", "output", "reasoning"]) : undefined;
     },
+    parseCommands: commandsFromToolUses,
+    parseToolCalls: toolCallCount,
   };
 }
 

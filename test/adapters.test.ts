@@ -149,6 +149,29 @@ describe("aider adapter", () => {
   });
 });
 
+describe("claude transcript parsing", () => {
+  const stdout = [
+    JSON.stringify({ message: { content: [
+      { type: "tool_use", name: "Bash", input: { command: "npm test" } },
+      { type: "tool_use", name: "Read", input: { file_path: "src/a.ts" } },
+    ] } }),
+    JSON.stringify({ message: { content: [
+      { type: "tool_use", name: "Bash", input: { command: "git status" } },
+    ] } }),
+  ].join("\n");
+
+  it("lists the shell commands the agent ran", () => {
+    expect(resolveAdapter("claude", ["CLAUDE.md"]).parseCommands!(stdout)).toEqual([
+      "npm test",
+      "git status",
+    ]);
+  });
+
+  it("counts every tool call", () => {
+    expect(resolveAdapter("claude", ["CLAUDE.md"]).parseToolCalls!(stdout)).toBe(3);
+  });
+});
+
 describe("generic adapter", () => {
   it("shell-quotes the interpolated prompt", () => {
     const adapter = resolveAdapter({ command: "aider --yes {prompt}" }, ["AGENTS.md"]);
