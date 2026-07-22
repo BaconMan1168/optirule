@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectTasks } from "../src/tasks.js";
+import { collectTasks, manualTasks } from "../src/tasks.js";
 import type { OptiruleConfig } from "../src/config.js";
 
 function git(dir: string, ...args: string[]): void {
@@ -118,5 +118,18 @@ describe("autoExtractTasks fallback", () => {
     const ids = tasks.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(tasks.map((t) => t.prompt).sort()).toEqual(["also fixed things", "stop it"]);
+  });
+});
+
+describe("manualTasks id validation", () => {
+  it("rejects an id that would escape the session directory", () => {
+    expect(() =>
+      manualTasks(config({ tasks: [{ id: "../../etc", prompt: "p", success: "true" }] })),
+    ).toThrow(/invalid task id/i);
+  });
+
+  it("accepts an ordinary id", () => {
+    const tasks = manualTasks(config({ tasks: [{ id: "my-task_1.0", prompt: "p", success: "true" }] }));
+    expect(tasks[0]!.id).toBe("my-task_1.0");
   });
 });

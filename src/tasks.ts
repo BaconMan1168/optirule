@@ -8,16 +8,41 @@ function cleanSubject(subject: string): string {
   return subject.replace(/^\w+(\([^)]*\))?!?:\s*/, "").trim();
 }
 
+// Allowlist rather than a denylist of "..": simpler to reason about, and since
+// no path separator is permitted at all, an id can never contain a traversal
+// segment in the first place.
+const VALID_MANUAL_ID = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Manual task ids get joined straight into snapshot paths (`runner.ts`,
+ * `validate.ts`), which are later force-removed recursively. `path.join`
+ * normalizes `..` rather than sandboxing it, so an id like `../../etc` would
+ * escape the session directory. Reject anything but a plain, single-segment
+ * id instead of silently sanitizing — the id also appears in report rows, and
+ * rewriting it would make the report disagree with the user's config.
+ */
+function assertSafeTaskId(id: string): void {
+  if (id === "." || id === ".." || !VALID_MANUAL_ID.test(id)) {
+    throw new Error(
+      `Invalid task id "${id}" in optirule.yml: task ids must be non-empty and may ` +
+        `contain only letters, digits, "-", "_", and "." (not "." or ".." alone).`,
+    );
+  }
+}
+
 /** Tasks explicitly listed in optirule.yml. These always take priority. */
 export function manualTasks(config: OptiruleConfig): Task[] {
-  return config.tasks.map((t) => ({
-    id: t.id,
-    prompt: t.prompt,
-    startRef: t.start_ref ?? "HEAD",
-    successCommand: t.success ?? config.test_command,
-    testFiles: [],
-    source: "manual",
-  }));
+  return config.tasks.map((t) => {
+    assertSafeTaskId(t.id);
+    return {
+      id: t.id,
+      prompt: t.prompt,
+      startRef: t.start_ref ?? "HEAD",
+      successCommand: t.success ?? config.test_command,
+      testFiles: [],
+      source: "manual",
+    };
+  });
 }
 
 /**
