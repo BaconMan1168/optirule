@@ -1177,14 +1177,11 @@ git commit -m "docs: describe the real success construction and snapshot isolati
 
 ---
 
-## What this plan deliberately leaves for P1
+## What this plan leaves for P1
 
-Landing this changes what the numbers mean, so the metric work should be planned against real data rather than guessed at now. Deferred:
+This plan fixes measurement validity only — it does not implement the metrics the Reddit feedback asked for. Those are specified in full in
+[`2026-07-21-compliance-metrics.md`](2026-07-21-compliance-metrics.md): the rubric and `optirule lint`, deterministic compliance checks, the blind judge, failure classification, mistakes-avoided as the headline, the ≥2-task keep rule, and guardrail protection in `export --minimal`.
 
-- Rubric extraction (`optirule lint`) and deterministic per-section compliance checks.
-- Compliance delta as the report headline; tokens demoted to a cost column.
-- Per-section verdicts derived from `baseline` vs `current` compliance without ablation runs.
-- Paired per-task analysis with bootstrap confidence intervals, replacing the fixed ±20% band in `src/analyze.ts:58`.
-- `export --minimal` keying off compliance instead of tokens, and never dropping a section whose rules were never *applicable* in the task set — the current implementation deletes rare-but-critical guardrails.
+P0 comes first because every one of those metrics is computed from runs, and until the success check can tell a working agent from an idle one, the runs themselves are not worth scoring.
 
 **After Task 8, before starting P1:** run `optirule run` on this repo and look at the pass rates. The whole efficiency-first framing was built on pass rates that could not move. Now they can.
