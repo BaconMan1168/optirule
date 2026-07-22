@@ -1,14 +1,15 @@
-import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import type { OptiruleConfig } from "./config.js";
 import type { AgentAdapter } from "./adapters.js";
-import type { Task, RunResult } from "./types.js";
+import type { Task, RunResult, TestFile } from "./types.js";
 import type { VariantSpec } from "./variants.js";
 import { removeSection } from "./sections.js";
-import { setupWorktree, teardownWorktree } from "./worktree.js";
+import { createSnapshot, destroySnapshot, stageDependencies } from "./snapshot.js";
 import { changedFiles } from "./git.js";
 import { runSpec, runShell } from "./exec.js";
-import { RUNS_DIR, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constants.js";
+import { SNAPSHOT_PREFIX, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constants.js";
 
 /** Called after each completed run so callers can report live progress. */
 export type ProgressFn = (result: RunResult) => void;
@@ -42,9 +43,24 @@ function applyVariant(
   }
 }
 
+/**
+ * Restore the task's test files at their post-fix content. Called only after
+ * the agent's diff has been measured, so these files are never counted as the
+ * agent's own changes.
+ */
+export function applyTestPatch(dir: string, testFiles: TestFile[]): void {
+  for (const file of testFiles) {
+    const dest = join(dir, file.path);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, file.content);
+  }
+}
+
 /** Run every repetition of every variant for one task, sequentially. */
 async function runTask(
   repoDir: string,
+  sessionDir: string,
+  modulesDir: string | undefined,
   adapter: AgentAdapter,
   task: Task,
   contents: Map<string, string>,
@@ -55,15 +71,18 @@ async function runTask(
   const results: RunResult[] = [];
   for (const variant of variants) {
     for (let rep = 0; rep < reps; rep++) {
-      const path = `${repoDir}/${RUNS_DIR}/${task.id}/${variant.id}/rep-${rep}`;
+      const path = join(sessionDir, task.id, variant.id, `rep-${rep}`);
       try {
-        await setupWorktree(repoDir, task.startRef, path);
+        await createSnapshot(repoDir, task.startRef, path, modulesDir);
         applyVariant(path, adapter.instructionFiles, contents, variant);
         const agent = await runSpec(adapter.buildCommand(task.prompt), path, AGENT_TIMEOUT_MS);
-        const check = await runShell(task.successCommand, path, SUCCESS_TIMEOUT_MS);
+        // Measure the agent's diff before restoring tests, or the test files
+        // we write would be attributed to the agent.
         const changed = (await changedFiles(path)).filter(
           (f) => !adapter.instructionFiles.includes(f),
         );
+        applyTestPatch(path, task.testFiles);
+        const check = await runShell(task.successCommand, path, SUCCESS_TIMEOUT_MS);
         const result: RunResult = {
           taskId: task.id,
           variant: variant.id,
@@ -77,7 +96,7 @@ async function runTask(
         results.push(result);
         onProgress?.(result);
       } finally {
-        await teardownWorktree(repoDir, path);
+        destroySnapshot(path);
       }
     }
   }
@@ -104,9 +123,27 @@ export async function runAll(
   onProgress?: ProgressFn,
 ): Promise<RunResult[]> {
   const contents = loadInstructionContents(repoDir, adapter.instructionFiles);
+  const sessionDir = mkdtempSync(join(tmpdir(), SNAPSHOT_PREFIX));
+  const modulesDir = stageDependencies(repoDir, sessionDir);
   const all: RunResult[] = [];
-  for (const task of tasks) {
-    all.push(...(await runTask(repoDir, adapter, task, contents, variants, config.reps, onProgress)));
+  try {
+    for (const task of tasks) {
+      all.push(
+        ...(await runTask(
+          repoDir,
+          sessionDir,
+          modulesDir,
+          adapter,
+          task,
+          contents,
+          variants,
+          config.reps,
+          onProgress,
+        )),
+      );
+    }
+  } finally {
+    rmSync(sessionDir, { recursive: true, force: true });
   }
   return all;
 }
