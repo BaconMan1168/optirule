@@ -36,6 +36,7 @@ program
   .option("-y, --yes", "skip the cost confirmation prompt")
   .option("--agent <name>", "override the configured agent")
   .option("--ablate", "also measure each section's impact via leave-one-out ablation")
+  .option("--ablate-files", "also measure each whole instruction file's impact")
   .action(async (options) => {
     try {
       await runBenchmark(process.cwd(), options);
@@ -47,8 +48,8 @@ program
 
 program
   .command("export")
-  .description("Emit a trimmed instruction file from the last --ablate run")
-  .option("--minimal", "drop sections whose removal did not hurt the pass rate")
+  .description("Emit a trimmed instruction file from the last compliance run")
+  .option("--minimal", "drop sections proven redundant or harmful")
   .option("--out <path>", "output path (single instruction file only)")
   .action((options) => {
     try {

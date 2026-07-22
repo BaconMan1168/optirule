@@ -29,8 +29,9 @@ export interface OptiruleConfig {
 const DEFAULTS = {
   agent: "claude",
   test_command: "npm test",
-  max_tasks: 8,
-  reps: 5,
+  // Wider task coverage generalizes better than repeating a narrow task set.
+  max_tasks: 15,
+  reps: 3,
 } as const;
 
 export const CONFIG_FILENAME = "optirule.yml";

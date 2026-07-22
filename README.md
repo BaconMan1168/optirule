@@ -21,8 +21,10 @@ efficiently, and shows what each section costs in tokens.
 
 ```bash
 npx optirule init             # detect instruction files, scaffold optirule.yml
+npx optirule lint             # extract an editable rule rubric; review it first
 npx optirule run              # benchmark: no instructions vs your instructions
 npx optirule run --ablate     # also measure each section's impact (leave-one-out)
+npx optirule run --ablate-files # also remove each whole instruction file in turn
 npx optirule export --minimal # write a trimmed file, keeping only load-bearing sections
 ```
 
@@ -37,7 +39,7 @@ For every task, optirule runs your agent twice in a history-free snapshot:
 | `baseline` | hidden           |
 | `current`  | present          |
 
-Each variant runs `reps` times (default 5; agents are non-deterministic, so a
+Each variant runs `reps` times (default 3; agents are non-deterministic, so a
 single run is noise). Every run happens in a **history-free snapshot** of your
 repo at the task's start commit — one commit, no future history — so the agent
 cannot read the commit that solves its own task.
@@ -46,31 +48,31 @@ For tasks taken from git history, success is the commit's own tests: optirule
 restores the test files the fix commit touched, at their post-fix content, after
 the agent finishes and after its diff has been measured. Those tests fail at the
 start commit and pass only if the agent actually did the work, so **pass/fail
-measures task completion**. Token usage, runtime, files changed, and files read
-are reported alongside it as cost.
+measures task completion**.
 
-### Per-section impact (`--ablate`)
+Before the benchmark, `optirule lint` asks the configured built-in agent to turn
+each instruction file into `optirule.rubric.yml`. Review and edit that file: it
+is the scoring contract. Rules use one of five checks:
 
-`run --ablate` adds a leave-one-out sweep: for each `##` section it runs one more
-variant with that section removed, then reports the **token impact** `ablated
-tokens − current tokens`. Positive means the agent burned more tokens without the
-section (it earns its keep); ~0 means no measurable effect; negative means the
-section made the agent burn more. This costs one extra variant per section, so
-the estimate scales with section count — that's why it's opt-in.
+- `files-touched`: allow or forbid path globs.
+- `command-used`: require or ban shell-command fragments.
+- `public-api-preserved`: flag removed or changed exported signatures.
+- `no-new-env-vars`: flag newly introduced environment-variable names.
+- `judge`: ask one blind yes/no model question, batched with all judge rules.
 
-The keep/drop call keys off **tokens** — a section earns its keep only if removing
-it moves agent token usage past a ±20% neutral band (tokens vary ~2× run-to-run on
-the same task, so smaller effects are noise). Each row carries an honest signal:
-**earns its keep**, **no measurable impact**, **actively hurts**, **too small to
-measure** (too tiny a share of the file to attribute an effect to), or **low
-confidence** (too few runs, or the agent reports no token counts). Token effects
-are noisy, so raise `reps` (10+) for sharper per-section verdicts.
+The report leads with **mistakes avoided**: baseline rule violations minus
+current rule violations, paired by task with a reproducible 95% interval. It
+keeps compliance separate from quality (test pass/fail) and reports tokens,
+runtime, churn, tool calls, and files touched/read as cost and effort.
 
-`export --minimal` reads the last ablation run and writes `<file>.optirule.md`
-(or `--out <path>`) keeping only load-bearing sections — it drops sections whose
-removal didn't cost tokens (dead weight) or freed tokens (actively hurts), never
-overwriting your original. The trimmed file is validated only against your task
-set, so sections it removes may still matter for tasks outside your benchmark.
+Every section receives one of five evidence labels: **earns its keep** (helped on
+at least two tasks), **one task only**, **redundant**, **never exercised**, or
+**harmful**. `export --minimal` removes only redundant or harmful sections. A
+never-exercised guardrail is unproven, not useless, so it is never dropped.
+
+`--ablate` still adds a leave-one-section-out sweep for interaction and token
+effects. `--ablate-files` does the same for each whole instruction file. Both
+increase the invocation count shown before confirmation.
 
 Tasks come from two sources, manual entries first:
 
@@ -91,8 +93,8 @@ agent: claude                 # built-in adapter, or an object with a command:
 instruction_files:
   - CLAUDE.md
 test_command: node --test
-max_tasks: 8
-reps: 5
+max_tasks: 15
+reps: 3
 tasks:
   - id: fix-auth-expiry
     prompt: "Fix the auth failure when the token expires before refresh"
@@ -149,9 +151,8 @@ aider at the backend with its own env vars, then select the model with
 
 Endpoints and keys stay in the agent's environment — optirule never handles them.
 
-The report shows **avg files read** alongside tokens and files changed when the
-adapter can report it (`claude` via its `Read` tool calls, `aider` from its chat
-log); it reads `—` for adapters that don't expose it.
+The report shows churn, tool calls, and files read alongside tokens and files
+changed when the adapter exposes them; unavailable values read `—`.
 
 ## Caveats
 
@@ -159,13 +160,13 @@ log); it reads `—` for adapters that don't expose it.
   thin solution as a pass.
 - Commit subjects are terse prompts. A task whose commit message does not explain
   the intent may be unsolvable for reasons unrelated to your instructions.
-- Agent token usage varies ~2× run-to-run on the same task, so token deltas from
-  few runs are within noise; the report flags low confidence.
-- A section that is a small share of the whole file can't be measured by
-  ablation even when it matters; those rows read "too small to measure".
-- The per-section keep/drop call still keys off tokens rather than pass/fail, so
-  a section that measurably saves no tokens can still matter for tasks outside
-  your benchmark.
+- Compliance is not quality. An agent can follow every rule and still fail the
+  task, so test pass/fail stays beside compliance in the report.
+- Rubric extraction is a model reading prose. Review `optirule.rubric.yml`
+  before it decides anything.
+- `public-api-preserved` is a diff-text heuristic, not type-aware analysis.
+- Rules that never apply to the task set remain protected; the benchmark has no
+  evidence about whether those guardrails are useful.
 
 ## Development
 

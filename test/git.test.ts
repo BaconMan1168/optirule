@@ -3,7 +3,14 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { filesChangedBetween, fileAtRef, churnLines, unifiedDiff } from "../src/git.js";
+import {
+  filesChangedBetween,
+  fileAtRef,
+  churnLines,
+  unifiedDiff,
+  changedFiles,
+  includeUntrackedInDiff,
+} from "../src/git.js";
 
 function git(dir: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd: dir, stdio: "pipe" }).toString().trim();
@@ -106,5 +113,23 @@ describe("git ref helpers", () => {
     const diff = await unifiedDiff(dir);
     expect(diff).toContain("-export const x = 2;");
     expect(diff).toContain("+export const x = 9;");
+  });
+
+  it("includes untracked files after marking them intent-to-add", async () => {
+    writeFileSync(join(dir, "new.ts"), "export const added = true;\n");
+    await includeUntrackedInDiff(dir);
+    expect(await changedFiles(dir)).toContain("new.ts");
+    expect(await unifiedDiff(dir)).toContain("+export const added = true;");
+    expect(await churnLines(dir)).toBe(1);
+  });
+
+  it("can exclude instruction files from diff evidence and churn", async () => {
+    writeFileSync(join(dir, "CLAUDE.md"), "instructions\n");
+    writeFileSync(join(dir, "src.ts"), "export const x = 9;\n");
+    await includeUntrackedInDiff(dir);
+    const diff = await unifiedDiff(dir, ["CLAUDE.md"]);
+    expect(diff).not.toContain("instructions");
+    expect(diff).toContain("export const x = 9;");
+    expect(await churnLines(dir, ["CLAUDE.md"])).toBe(2);
   });
 });

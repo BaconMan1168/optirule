@@ -4,13 +4,13 @@ import { resolveAdapter } from "../adapters.js";
 import { detectAgent } from "../detect.js";
 import { parseSections } from "../sections.js";
 import type { ParsedSection } from "../sections.js";
-import { planVariants } from "../variants.js";
+import { planVariants, planFileVariants } from "../variants.js";
 import { collectTasks } from "../tasks.js";
 import { keepMeasurableTasks } from "../validate.js";
 import { runAll } from "../runner.js";
 import { analyze } from "../analyze.js";
 import { writeReport, writeAnalysis } from "../report.js";
-import { planRun, formatPlan } from "../estimate.js";
+import { planRun, formatPlan, powerWarning } from "../estimate.js";
 import { confirm } from "../prompt.js";
 import { loadRubric, RUBRIC_FILENAME } from "../rubric.js";
 
@@ -18,6 +18,7 @@ export interface RunOptions {
   yes?: boolean;
   agent?: string;
   ablate?: boolean;
+  ablateFiles?: boolean;
 }
 
 /** Parse and merge sections across every instruction file being tested. */
@@ -51,6 +52,7 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
   const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
   const ablate = options.ablate ?? false;
   const variants = planVariants(sections, ablate);
+  if (options.ablateFiles) variants.push(...planFileVariants(config.instruction_files));
 
   console.log("Collecting tasks...");
   const candidates = await collectTasks(repoDir, config);
@@ -82,6 +84,8 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
 
   const plan = planRun(tasks.length, config.reps, totalTokens, variants.length);
   console.log(`\n${formatPlan(plan)}\n`);
+  const warning = powerWarning(tasks.length);
+  if (warning) console.log(`⚠ ${warning}\n`);
   if (!options.yes && !(await confirm("Proceed?"))) {
     console.log("Aborted.");
     return;

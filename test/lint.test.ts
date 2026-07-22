@@ -10,6 +10,7 @@ describe("buildLintPrompt", () => {
   it("includes the section text and every supported check kind", () => {
     const prompt = buildLintPrompt(sections, "## Testing\nAlways run `npm test`.\n");
     expect(prompt).toContain("## Testing");
+    expect(prompt).toContain("Source file: CLAUDE.md");
     for (const kind of ["files-touched", "command-used", "public-api-preserved", "no-new-env-vars", "judge"]) {
       expect(prompt).toContain(kind);
     }

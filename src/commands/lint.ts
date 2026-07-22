@@ -18,7 +18,11 @@ const SUPPORTED_KINDS: CheckKind[] = [
   "judge",
 ];
 
-export function buildLintPrompt(sections: ParsedSection[], content: string): string {
+export function buildLintPrompt(
+  sections: ParsedSection[],
+  content: string,
+  file = sections[0]?.file ?? "instruction file",
+): string {
   return `You are auditing a coding-agent instruction file. Split it into rules that can be
 mechanically verified after an agent edits a repository, and rules that cannot.
 
@@ -39,6 +43,7 @@ Reply with JSON only:
 "conflicts":[{"a":"...","b":"...","reason":"..."}]}
 
 Sections present: ${sections.map((s) => s.title).join(", ")}
+Source file: ${file}
 
 The file:
 ${content}`;
@@ -75,7 +80,7 @@ export async function runLint(repoDir: string): Promise<void> {
       const path = join(repoDir, file);
       if (!existsSync(path)) continue;
       const content = readFileSync(path, "utf8");
-      const prompt = buildLintPrompt(parseSections(content, file), content);
+      const prompt = buildLintPrompt(parseSections(content, file), content, file);
       const result = await runSpec(adapter.buildJudgeCommand(prompt), scratch, SUCCESS_TIMEOUT_MS);
       const rubric = parseLintResponse(adapter.extractText(result.stdout));
       merged.rules.push(...rubric.rules);

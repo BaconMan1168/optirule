@@ -9,7 +9,7 @@ import type { Rule } from "./rubric.js";
 import type { RunContext } from "./checks.js";
 import { removeSection } from "./sections.js";
 import { createSnapshot, destroySnapshot, stageDependencies } from "./snapshot.js";
-import { changedFiles, unifiedDiff, churnLines } from "./git.js";
+import { changedFiles, unifiedDiff, churnLines, includeUntrackedInDiff } from "./git.js";
 import { runSpec, runShell } from "./exec.js";
 import { SNAPSHOT_PREFIX, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constants.js";
 import { evaluateDeterministic, classifyFailure } from "./evaluate.js";
@@ -33,6 +33,10 @@ function applyVariant(
   for (const file of instructionFiles) {
     const dest = `${snapshot}/${file}`;
     if (variant.kind === "baseline") {
+      if (existsSync(dest)) rmSync(dest);
+      continue;
+    }
+    if (variant.kind === "ablate-file" && variant.file === file) {
       if (existsSync(dest)) rmSync(dest);
       continue;
     }
@@ -83,16 +87,17 @@ async function runTask(
         const agent = await runSpec(adapter.buildCommand(task.prompt), path, AGENT_TIMEOUT_MS);
         // Measure the agent's diff before restoring tests, or the test files
         // we write would be attributed to the agent.
+        await includeUntrackedInDiff(path);
         const changed = (await changedFiles(path)).filter(
           (f) => !adapter.instructionFiles.includes(f),
         );
         const ctx: RunContext = {
           filesChanged: changed,
-          diff: await unifiedDiff(path),
+          diff: await unifiedDiff(path, adapter.instructionFiles),
           commands: adapter.parseCommands?.(agent.stdout) ?? [],
           timedOut: agent.timedOut,
         };
-        const churn = await churnLines(path);
+        const churn = await churnLines(path, adapter.instructionFiles);
         const deterministic = evaluateDeterministic(rules, ctx);
         const judged = await judgeRun(
           adapter,

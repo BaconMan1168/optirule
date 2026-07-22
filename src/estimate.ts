@@ -44,3 +44,14 @@ export function formatPlan(plan: RunPlan): string {
   }
   return lines.join("\n");
 }
+
+const MIN_HEALTHY_TASKS = 8;
+
+export function powerWarning(taskCount: number): string | undefined {
+  if (taskCount >= MIN_HEALTHY_TASKS) return undefined;
+  return (
+    `Only ${taskCount} task(s). The two-task rule that decides whether a section earns its ` +
+    "keep needs a wider set to mean anything — add tasks to optirule.yml, or raise " +
+    "max_tasks, before trusting any keep/drop verdict."
+  );
+}

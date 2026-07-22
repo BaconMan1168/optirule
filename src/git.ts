@@ -23,14 +23,25 @@ export async function changedFiles(cwd: string): Promise<string[]> {
   return out ? out.split("\n") : [];
 }
 
+/** Make untracked files appear in subsequent diffs without staging their content. */
+export async function includeUntrackedInDiff(cwd: string): Promise<void> {
+  await git(["add", "--intent-to-add", "--all"], cwd);
+}
+
+function diffPathspec(exclude: string[]): string[] {
+  return exclude.length
+    ? ["--", ".", ...exclude.map((path) => `:(exclude,top,literal)${path}`)]
+    : [];
+}
+
 /** The working tree's unified diff against HEAD. */
-export function unifiedDiff(cwd: string): Promise<string> {
-  return git(["diff", "--unified=3"], cwd);
+export function unifiedDiff(cwd: string, exclude: string[] = []): Promise<string> {
+  return git(["diff", "--unified=3", ...diffPathspec(exclude)], cwd);
 }
 
 /** Lines added plus lines deleted in the working tree — a code-churn signal. */
-export async function churnLines(cwd: string): Promise<number> {
-  const out = await git(["diff", "--numstat"], cwd);
+export async function churnLines(cwd: string, exclude: string[] = []): Promise<number> {
+  const out = await git(["diff", "--numstat", ...diffPathspec(exclude)], cwd);
   if (!out) return 0;
   let total = 0;
   for (const line of out.split("\n")) {
