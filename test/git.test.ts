@@ -73,4 +73,26 @@ describe("git ref helpers", () => {
       /invalid object name/i,
     );
   });
+
+  it("still returns undefined for a missing path when the caller's environment sets a non-English locale", async () => {
+    // French is one of git's translated locales; if this system doesn't have it
+    // installed, git silently falls back to English and the test is a no-op
+    // assertion rather than a false pass — still valid, just less informative.
+    const prevLang = process.env.LANG;
+    const prevLanguage = process.env.LANGUAGE;
+    const prevLcAll = process.env.LC_ALL;
+    process.env.LANG = "fr_FR.UTF-8";
+    process.env.LANGUAGE = "fr";
+    process.env.LC_ALL = "fr_FR.UTF-8";
+    try {
+      expect(await fileAtRef(parent, "test/x.test.ts", dir)).toBeUndefined();
+    } finally {
+      if (prevLang === undefined) delete process.env.LANG;
+      else process.env.LANG = prevLang;
+      if (prevLanguage === undefined) delete process.env.LANGUAGE;
+      else process.env.LANGUAGE = prevLanguage;
+      if (prevLcAll === undefined) delete process.env.LC_ALL;
+      else process.env.LC_ALL = prevLcAll;
+    }
+  });
 });

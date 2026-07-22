@@ -35,6 +35,10 @@ async function gitRaw(args: string[], cwd: string): Promise<Buffer> {
     cwd,
     stripFinalNewline: false,
     encoding: "buffer",
+    // Pinned so isMissingPathError's English substring match works regardless
+    // of the caller's LANG/LC_ALL — do not remove this to "respect the user's
+    // locale", it would make error classification silently stop working.
+    env: { LC_ALL: "C" },
   });
   return Buffer.from(stdout);
 }
