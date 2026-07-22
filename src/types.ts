@@ -31,6 +31,13 @@ export interface TestFile {
   content: Buffer;
 }
 
+export type Verdict = "followed" | "violated" | "not-applicable";
+
+export interface RuleVerdict {
+  ruleId: string;
+  verdict: Verdict;
+}
+
 /** A `##` section parsed from an instruction file, with its static token cost. */
 export interface Section {
   /** Heading text without the leading `##`. */
