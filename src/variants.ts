@@ -6,14 +6,14 @@ import type { ParsedSection } from "./sections.js";
  * - `current`: instruction files as they are today.
  * - `ablate`: current, but with one section removed from its source file.
  *
- * `id` is path-safe: it names the worktree directory and tags each RunResult.
+ * `id` is path-safe: it names the snapshot directory and tags each RunResult.
  */
 export type VariantSpec =
   | { id: "baseline"; kind: "baseline" }
   | { id: "current"; kind: "current" }
   | { id: string; kind: "ablate"; section: ParsedSection };
 
-/** Path-safe slug for a section title (no slashes or spaces to break worktree paths). */
+/** Path-safe slug for a section title (no slashes or spaces to break snapshot paths). */
 export function slugify(title: string): string {
   return (
     title

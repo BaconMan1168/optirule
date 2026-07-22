@@ -15,19 +15,19 @@ import { SNAPSHOT_PREFIX, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constan
 export type ProgressFn = (result: RunResult) => void;
 
 /**
- * Put the worktree into the state a variant requires. `current` writes each
+ * Put the snapshot into the state a variant requires. `current` writes each
  * instruction file's present-day content (not the version at the task's start
  * ref); `baseline` removes them all; `ablate` writes them but with one section
  * removed from its source file.
  */
 function applyVariant(
-  worktree: string,
+  snapshot: string,
   instructionFiles: string[],
   contents: Map<string, string>,
   variant: VariantSpec,
 ): void {
   for (const file of instructionFiles) {
-    const dest = `${worktree}/${file}`;
+    const dest = `${snapshot}/${file}`;
     if (variant.kind === "baseline") {
       if (existsSync(dest)) rmSync(dest);
       continue;

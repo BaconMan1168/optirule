@@ -1,6 +1,6 @@
 /** Agent adapters: how optirule invokes a coding agent and reads its output. */
 
-/** How to spawn one agent invocation. Runner sets cwd to the worktree. */
+/** How to spawn one agent invocation. Runner sets cwd to the snapshot. */
 export interface SpawnSpec {
   command: string;
   args: string[];

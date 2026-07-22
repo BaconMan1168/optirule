@@ -52,7 +52,7 @@ export interface RunResult {
   durationMs: number;
   /** Tokens parsed from agent output, when the adapter can report them. */
   tokens?: number;
-  /** Files modified in the worktree, from `git diff --name-only`. */
+  /** Files modified in the snapshot, from `git diff --name-only`. */
   filesChanged: string[];
   /** Files the agent read, when the adapter can report them. */
   filesRead?: string[];
