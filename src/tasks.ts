@@ -1,6 +1,6 @@
 import type { OptiruleConfig } from "./config.js";
 import type { Task } from "./types.js";
-import { findFixCommits } from "./git.js";
+import { findFixCommits, type FixCommit } from "./git.js";
 import { buildTestPatch } from "./testfiles.js";
 
 /** Strip a conventional-commit prefix so the subject reads as a task prompt. */
@@ -21,26 +21,25 @@ export function manualTasks(config: OptiruleConfig): Task[] {
 }
 
 /**
- * Extract tasks from recent feat/fix commits. Each starts from the commit's
- * parent with the commit subject as its prompt, and carries the commit's test
- * files at their post-fix content. Commits that touched no tests are skipped:
- * without a test that fails at the parent there is no way to tell whether the
- * agent did the task, and the run would score a no-op agent as a pass.
+ * Turn candidate commits into tasks, stopping once `needed` are collected and
+ * skipping any commit sha already in `seen` (marked whether or not it survives,
+ * so a relaxed pass never re-runs `buildTestPatch` on a commit already tried).
+ * Commits that touched no tests are dropped: without a test that fails at the
+ * parent there is no way to tell whether the agent did the task, and the run
+ * would score a no-op agent as a pass.
  */
-export async function autoExtractTasks(
-  repoDir: string,
-  config: OptiruleConfig,
+async function commitsToTasks(
+  commits: FixCommit[],
   needed: number,
+  config: OptiruleConfig,
+  repoDir: string,
+  seen: Set<string>,
 ): Promise<Task[]> {
-  if (needed <= 0) return [];
-  // Over-fetch: commits without tests are dropped, so candidates exceed slots.
-  const strict = await findFixCommits(repoDir, needed * 3);
-  const commits =
-    strict.length >= needed ? strict : await findFixCommits(repoDir, needed * 3, true);
-
   const tasks: Task[] = [];
   for (const commit of commits) {
     if (tasks.length >= needed) break;
+    if (seen.has(commit.sha)) continue;
+    seen.add(commit.sha);
     const testFiles = await buildTestPatch(commit.parent, commit.sha, repoDir);
     if (testFiles.length === 0) continue;
     tasks.push({
@@ -53,6 +52,30 @@ export async function autoExtractTasks(
     });
   }
   return tasks;
+}
+
+/**
+ * Extract tasks from recent feat/fix commits. Each starts from the commit's
+ * parent with the commit subject as its prompt, and carries the commit's test
+ * files at their post-fix content. Falls back to a relaxed commit search when
+ * the strict search doesn't yield enough *surviving* tasks — candidate count
+ * alone is misleading, since candidates with no test changes are dropped.
+ */
+export async function autoExtractTasks(
+  repoDir: string,
+  config: OptiruleConfig,
+  needed: number,
+): Promise<Task[]> {
+  if (needed <= 0) return [];
+  // Over-fetch: commits without tests are dropped, so candidates exceed slots.
+  const strict = await findFixCommits(repoDir, needed * 3);
+  const seen = new Set<string>();
+  const tasks = await commitsToTasks(strict, needed, config, repoDir, seen);
+  if (tasks.length >= needed) return tasks;
+
+  const relaxed = await findFixCommits(repoDir, needed * 3, true);
+  const more = await commitsToTasks(relaxed, needed - tasks.length, config, repoDir, seen);
+  return [...tasks, ...more];
 }
 
 /**

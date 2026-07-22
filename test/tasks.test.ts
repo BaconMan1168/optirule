@@ -85,3 +85,38 @@ describe("collectTasks auto-extraction", () => {
     expect(tasks[0]!.testFiles).toEqual([]);
   });
 });
+
+describe("autoExtractTasks fallback", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "optirule-tasks-fallback-"));
+    git(dir, "init", "-q");
+    git(dir, "config", "user.email", "t@t.co");
+    git(dir, "config", "user.name", "t");
+    commitWithoutTest(dir, "root", "init");
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("falls back to the relaxed search when strict candidates outnumber the survivors", async () => {
+    // Three strict (feat/fix) candidates exceed `needed`, but none touched tests.
+    commitWithoutTest(dir, "s1", "feat: add x");
+    commitWithoutTest(dir, "s2", "fix: bug y");
+    commitWithoutTest(dir, "s3", "fix: bug z");
+    // A relaxed-only commit (subject matches neither feat:/fix:/bug/closes #) that does.
+    commitWithTest(dir, "r1", "chore: tidy up");
+
+    const tasks = await collectTasks(dir, config({ max_tasks: 2 }));
+    expect(tasks.map((t) => t.prompt)).toEqual(["tidy up"]);
+  });
+
+  it("does not produce duplicate task ids when the relaxed search re-surfaces strict commits", async () => {
+    commitWithTest(dir, "s1", "fix: stop it");
+    commitWithoutTest(dir, "s2", "fix: also touch nothing");
+    commitWithTest(dir, "r1", "chore: also fixed things");
+
+    const tasks = await collectTasks(dir, config({ max_tasks: 5 }));
+    const ids = tasks.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(tasks.map((t) => t.prompt).sort()).toEqual(["also fixed things", "stop it"]);
+  });
+});
