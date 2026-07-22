@@ -1,6 +1,7 @@
 import type { OptiruleConfig } from "./config.js";
 import type { Task } from "./types.js";
 import { findFixCommits } from "./git.js";
+import { buildTestPatch } from "./testfiles.js";
 
 /** Strip a conventional-commit prefix so the subject reads as a task prompt. */
 function cleanSubject(subject: string): string {
@@ -20,11 +21,11 @@ export function manualTasks(config: OptiruleConfig): Task[] {
 }
 
 /**
- * Extract tasks from recent feat/fix commits: each becomes a task that starts
- * from the commit's parent with the commit subject as its prompt. We no longer
- * gate on "tests fail at the parent" — the run measures efficiency metrics
- * (tokens, time, files) regardless of pass/fail, so any real unit of work is a
- * valid task. Falls back to a relaxed commit search when strict matches are few.
+ * Extract tasks from recent feat/fix commits. Each starts from the commit's
+ * parent with the commit subject as its prompt, and carries the commit's test
+ * files at their post-fix content. Commits that touched no tests are skipped:
+ * without a test that fails at the parent there is no way to tell whether the
+ * agent did the task, and the run would score a no-op agent as a pass.
  */
 export async function autoExtractTasks(
   repoDir: string,
@@ -32,18 +33,26 @@ export async function autoExtractTasks(
   needed: number,
 ): Promise<Task[]> {
   if (needed <= 0) return [];
-  const strict = await findFixCommits(repoDir, needed);
+  // Over-fetch: commits without tests are dropped, so candidates exceed slots.
+  const strict = await findFixCommits(repoDir, needed * 3);
   const commits =
-    strict.length >= needed ? strict : await findFixCommits(repoDir, needed, true);
+    strict.length >= needed ? strict : await findFixCommits(repoDir, needed * 3, true);
 
-  return commits.slice(0, needed).map((commit) => ({
-    id: `commit-${commit.sha.slice(0, 7)}`,
-    prompt: cleanSubject(commit.subject),
-    startRef: commit.parent,
-    successCommand: config.test_command,
-    testFiles: [],
-    source: "git-history",
-  }));
+  const tasks: Task[] = [];
+  for (const commit of commits) {
+    if (tasks.length >= needed) break;
+    const testFiles = await buildTestPatch(commit.parent, commit.sha, repoDir);
+    if (testFiles.length === 0) continue;
+    tasks.push({
+      id: `commit-${commit.sha.slice(0, 7)}`,
+      prompt: cleanSubject(commit.subject),
+      startRef: commit.parent,
+      successCommand: config.test_command,
+      testFiles,
+      source: "git-history",
+    });
+  }
+  return tasks;
 }
 
 /**
@@ -57,7 +66,7 @@ export async function collectTasks(repoDir: string, config: OptiruleConfig): Pro
   const tasks = [...manual, ...auto];
   if (tasks.length === 0) {
     throw new Error(
-      "No tasks found. Add tasks to optirule.yml, or ensure recent fix commits have failing tests at their parent commit.",
+      "No tasks found. Add tasks to optirule.yml, or ensure recent feat/fix commits changed test files — a commit with no test change cannot be scored.",
     );
   }
   return tasks;
