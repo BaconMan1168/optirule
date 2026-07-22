@@ -17,16 +17,6 @@ export function revParse(ref: string, cwd: string): Promise<string> {
   return git(["rev-parse", ref], cwd);
 }
 
-/** Create a detached worktree at `ref` under `path`. */
-export async function addWorktree(path: string, ref: string, cwd: string): Promise<void> {
-  await git(["worktree", "add", "--detach", "--force", path, ref], cwd);
-}
-
-/** Remove a worktree and its administrative files. */
-export async function removeWorktree(path: string, cwd: string): Promise<void> {
-  await git(["worktree", "remove", "--force", path], cwd);
-}
-
 /** Files changed in the working tree, from `git diff --name-only`. */
 export async function changedFiles(cwd: string): Promise<string[]> {
   const out = await git(["diff", "--name-only"], cwd);

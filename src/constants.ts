@@ -3,6 +3,6 @@
 export const AGENT_TIMEOUT_MS = 10 * 60_000;
 export const SUCCESS_TIMEOUT_MS = 5 * 60_000;
 
-export const RUNS_DIR = ".optirule/runs";
+export const SNAPSHOT_PREFIX = "optirule-run-";
 export const REPORT_PATH = ".optirule/report.html";
 export const ANALYSIS_PATH = ".optirule/analysis.json";
