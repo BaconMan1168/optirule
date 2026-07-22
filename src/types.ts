@@ -13,9 +13,32 @@ export interface Task {
   startRef: string;
   /** Shell command whose exit code 0 means the task passed. */
   successCommand: string;
+  /** Tests to restore before the success check. Empty for manual tasks. */
+  testFiles: TestFile[];
   /** Where the task came from, for reporting. */
   source: "manual" | "git-history";
 }
+
+/**
+ * A test file restored to its post-fix content before the success check runs.
+ * This is what makes pass/fail mean "did the task", not "didn't break anything":
+ * at the start ref these tests fail, and only a correct change makes them pass.
+ */
+export interface TestFile {
+  /** Repo-relative path. */
+  path: string;
+  /** Raw bytes at the fix commit; a Buffer so non-UTF-8 content survives verbatim. */
+  content: Buffer;
+}
+
+export type Verdict = "followed" | "violated" | "not-applicable";
+
+export interface RuleVerdict {
+  ruleId: string;
+  verdict: Verdict;
+}
+
+export type FailureCategory = "timed-out" | "no-op" | "ignored-instructions" | "wrong-code";
 
 /** A `##` section parsed from an instruction file, with its static token cost. */
 export interface Section {
@@ -38,8 +61,16 @@ export interface RunResult {
   durationMs: number;
   /** Tokens parsed from agent output, when the adapter can report them. */
   tokens?: number;
-  /** Files modified in the worktree, from `git diff --name-only`. */
+  /** Files modified in the snapshot, from `git diff --name-only`. */
   filesChanged: string[];
   /** Files the agent read, when the adapter can report them. */
   filesRead?: string[];
+  /** Per-rule outcomes for this run. */
+  verdicts: RuleVerdict[];
+  /** Lines added plus deleted. */
+  churn: number;
+  /** Total tool invocations, when the adapter reports them. */
+  toolCalls?: number;
+  /** Set only when the success check failed. */
+  failure?: FailureCategory;
 }

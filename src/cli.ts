@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { runInit } from "./commands/init.js";
 import { runBenchmark } from "./commands/run.js";
 import { runExport } from "./commands/export.js";
+import { runLint } from "./commands/lint.js";
 
 const program = new Command();
 
@@ -18,11 +19,24 @@ program
   });
 
 program
+  .command("lint")
+  .description("audit instruction files and write an editable rubric before benchmarking")
+  .action(async () => {
+    try {
+      await runLint(process.cwd());
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command("run")
   .description("Run the benchmark: baseline vs current instructions")
   .option("-y, --yes", "skip the cost confirmation prompt")
   .option("--agent <name>", "override the configured agent")
   .option("--ablate", "also measure each section's impact via leave-one-out ablation")
+  .option("--ablate-files", "also measure each whole instruction file's impact")
   .action(async (options) => {
     try {
       await runBenchmark(process.cwd(), options);
@@ -34,8 +48,8 @@ program
 
 program
   .command("export")
-  .description("Emit a trimmed instruction file from the last --ablate run")
-  .option("--minimal", "drop sections whose removal did not hurt the pass rate")
+  .description("Emit a trimmed instruction file from the last compliance run")
+  .option("--minimal", "drop sections proven redundant or harmful")
   .option("--out <path>", "output path (single instruction file only)")
   .action((options) => {
     try {

@@ -1,6 +1,13 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Analysis, VariantSummary, SectionImpact, ImpactSignal } from "./analyze.js";
+import type {
+  Analysis,
+  VariantSummary,
+  SectionImpact,
+  ImpactSignal,
+  ComplianceAnalysis,
+  SectionSignal,
+} from "./analyze.js";
 import { REPORT_PATH, ANALYSIS_PATH } from "./constants.js";
 
 function esc(text: string): string {
@@ -14,14 +21,70 @@ function pct(fraction: number): string {
 function summaryRow(s: VariantSummary): string {
   const tokens = s.avgTokens === undefined ? "—" : Math.round(s.avgTokens).toLocaleString();
   const filesRead = s.avgFilesRead === undefined ? "—" : s.avgFilesRead.toFixed(1);
+  const toolCalls = s.avgToolCalls === undefined ? "—" : s.avgToolCalls.toFixed(1);
+  const perSuccess = costPerSuccess((s.avgTokens ?? 0) * s.runs, s.passed);
+  const cost = perSuccess === undefined ? "—" : Math.round(perSuccess).toLocaleString();
   return `<tr>
     <td>${s.variant}</td>
     <td>${pct(s.passRate)} <span class="muted">(${s.passed}/${s.runs})</span></td>
     <td>${tokens}</td>
+    <td>${cost}</td>
     <td>${(s.avgDurationMs / 1000).toFixed(1)}s</td>
     <td>${s.avgFilesChanged.toFixed(1)}</td>
+    <td>${s.avgChurn.toFixed(1)}</td>
+    <td>${toolCalls}</td>
     <td>${filesRead}</td>
   </tr>`;
+}
+
+const COMPLIANCE_LABELS: Record<SectionSignal, string> = {
+  "earns-its-keep": "Earns its keep",
+  "single-task-signal": "One task only — not enough evidence",
+  redundant: "Redundant — the agent complied anyway",
+  "never-exercised": "Never exercised — unproven, not useless",
+  harmful: "Harmful — compliance got worse",
+};
+
+export function costPerSuccess(totalTokens: number, passes: number): number | undefined {
+  return passes > 0 ? totalTokens / passes : undefined;
+}
+
+export function renderCompliance(compliance: ComplianceAnalysis): string {
+  const [low, high] = compliance.mistakesAvoidedCI;
+  const rows = compliance.sections
+    .map(
+      (section) => `<tr>
+      <td>${esc(section.title)}</td>
+      <td>${section.mistakesAvoided}</td>
+      <td>${section.tasksImproved}</td>
+      <td>${section.applicableRuns}</td>
+      <td>${COMPLIANCE_LABELS[section.signal]}</td>
+    </tr>`,
+    )
+    .join("");
+  const failureRows = Object.entries(compliance.failures)
+    .flatMap(([variant, categories]) =>
+      Object.entries(categories).map(
+        ([category, count]) =>
+          `<tr><td>${esc(variant)}</td><td>${esc(category)}</td><td>${count}</td></tr>`,
+      ),
+    )
+    .join("");
+
+  return `<section>
+    <h2>Mistakes avoided</h2>
+    <p class="headline"><strong>${compliance.mistakesAvoided}</strong>
+      <span class="muted">rule violations prevented (95% CI ${low.toFixed(1)} to ${high.toFixed(1)} per task)</span></p>
+    <table>
+      <thead><tr><th>Section</th><th>Mistakes avoided</th><th>Tasks improved</th><th>Applicable runs</th><th>Verdict</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="5" class="muted">No rubric rules were scored.</td></tr>`}</tbody>
+    </table>
+    <h2>Failures by category</h2>
+    <table>
+      <thead><tr><th>Variant</th><th>Category</th><th>Runs</th></tr></thead>
+      <tbody>${failureRows || `<tr><td colspan="3" class="muted">No failures.</td></tr>`}</tbody>
+    </table>
+  </section>`;
 }
 
 function sectionRow(title: string, tokens: number, total: number): string {
@@ -67,12 +130,7 @@ function impactSection(impacts: SectionImpact[]): string {
 
 /** Render the analysis into a single self-contained HTML document. */
 export function renderReport(analysis: Analysis): string {
-  const { passRateDeltaPct, tokenDeltaPct, lowConfidence, sections, totalInstructionTokens, taskCount } =
-    analysis;
-  const headline =
-    tokenDeltaPct === undefined
-      ? `Your instructions changed pass rate by <strong>${passRateDeltaPct >= 0 ? "+" : ""}${passRateDeltaPct.toFixed(0)} pts</strong>`
-      : `Your instructions changed agent token use by <strong>${tokenDeltaPct >= 0 ? "+" : ""}${tokenDeltaPct}%</strong>`;
+  const { lowConfidence, sections, totalInstructionTokens, taskCount } = analysis;
   const recommendation = analysis.recommendation.length
     ? `<div class="rec">${analysis.recommendation.map((l) => `<p>${esc(l)}</p>`).join("")}</div>`
     : "";
@@ -100,14 +158,14 @@ export function renderReport(analysis: Analysis): string {
   .rec p { margin: .3rem 0; }
 </style></head><body>
 <h1>optirule report</h1>
-<p class="headline">${headline}</p>
-<p class="muted">Across ${taskCount} task${taskCount === 1 ? "" : "s"}, baseline (no instructions) vs current (your instruction file). Pass/fail is one metric among several — efficiency is the primary signal.</p>
+<p class="muted">Across ${taskCount} task${taskCount === 1 ? "" : "s"}, baseline (no instructions) vs current (your instruction file). Compliance and task outcome are separate; tokens are cost.</p>
 ${confidence}
 ${recommendation}
+${renderCompliance(analysis.compliance)}
 
-<h2>Summary</h2>
+<h2>Cost and outcome</h2>
 <table>
-  <thead><tr><th>Variant</th><th>Pass rate</th><th>Avg tokens</th><th>Avg runtime</th><th>Avg files changed</th><th>Avg files read</th></tr></thead>
+  <thead><tr><th>Variant</th><th>Pass rate</th><th>Avg tokens</th><th>Tokens / success</th><th>Avg runtime</th><th>Avg files changed</th><th>Avg churn</th><th>Avg tool calls</th><th>Avg files read</th></tr></thead>
   <tbody>${analysis.variants.map(summaryRow).join("")}</tbody>
 </table>
 ${analysis.sectionImpacts?.length ? impactSection(analysis.sectionImpacts) : ""}

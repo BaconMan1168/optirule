@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { renderReport } from "../src/report.js";
-import type { Analysis, VariantSummary, SectionImpact } from "../src/analyze.js";
+import { renderReport, renderCompliance, costPerSuccess } from "../src/report.js";
+import type { Analysis, VariantSummary, SectionImpact, ComplianceAnalysis } from "../src/analyze.js";
 
 function summary(variant: string, over: Partial<VariantSummary> = {}): VariantSummary {
   return {
@@ -11,6 +11,7 @@ function summary(variant: string, over: Partial<VariantSummary> = {}): VariantSu
     avgDurationMs: 1000,
     avgTokens: 1000,
     avgFilesChanged: 2,
+    avgChurn: 10,
     ...over,
   };
 }
@@ -24,16 +25,18 @@ function analysis(over: Partial<Analysis> = {}): Analysis {
     sections: [],
     totalInstructionTokens: 0,
     taskCount: 1,
+    compliance: { mistakesAvoided: 0, mistakesAvoidedCI: [0, 0], sections: [], failures: {} },
     recommendation: [],
     ...over,
   };
 }
 
 describe("renderReport", () => {
-  it("headlines the token-usage change", () => {
-    const html = renderReport(analysis({ tokenDeltaPct: -18 }));
-    expect(html).toMatch(/token use/i);
-    expect(html).toContain("18%");
+  it("headlines mistakes avoided and treats tokens as cost", () => {
+    const compliance: ComplianceAnalysis = { mistakesAvoided: 4, mistakesAvoidedCI: [1.2, 3.4], sections: [], failures: {} };
+    const html = renderReport(analysis({ compliance }));
+    expect(html).toContain("Mistakes avoided");
+    expect(html).toContain("Cost and outcome");
   });
 
   it("renders the recommendation lines", () => {
@@ -68,5 +71,34 @@ describe("renderReport", () => {
     expect(html).toContain("300"); // static cost
     expect(html).toMatch(/\+1,000/); // token impact
     expect(html).toContain("Earns its keep");
+  });
+});
+
+describe("renderCompliance", () => {
+  const compliance: ComplianceAnalysis = {
+    mistakesAvoided: 4,
+    mistakesAvoidedCI: [1.2, 3.4],
+    sections: [
+      { file: "CLAUDE.md", title: "Layout", mistakesAvoided: 4, tasksImproved: 3, applicableRuns: 12, signal: "earns-its-keep" },
+      { file: "CLAUDE.md", title: "Secrets", mistakesAvoided: 0, tasksImproved: 0, applicableRuns: 0, signal: "never-exercised" },
+    ],
+    failures: { baseline: { "no-op": 2 }, current: { "wrong-code": 1 } },
+  };
+
+  it("shows the headline interval, section evidence, and failure categories", () => {
+    const html = renderCompliance(compliance);
+    expect(html).toContain("4");
+    expect(html).toContain("1.2");
+    expect(html).toContain("3.4");
+    expect(html.toLowerCase()).toContain("never exercised");
+    expect(html).toContain("no-op");
+    expect(html).toContain("wrong-code");
+  });
+});
+
+describe("costPerSuccess", () => {
+  it("divides total tokens by passes without producing Infinity", () => {
+    expect(costPerSuccess(10_000, 4)).toBe(2500);
+    expect(costPerSuccess(10_000, 0)).toBeUndefined();
   });
 });

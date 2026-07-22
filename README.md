@@ -1,14 +1,12 @@
 # optirule
 
-[![npm version](https://img.shields.io/npm/v/optirule.svg)](https://www.npmjs.com/package/optirule)
-[![npm downloads](https://img.shields.io/npm/dm/optirule.svg)](https://www.npmjs.com/package/optirule)
-[![node](https://img.shields.io/node/v/optirule.svg)](https://www.npmjs.com/package/optirule)
-[![license](https://img.shields.io/npm/l/optirule.svg)](./LICENSE)
+[![Node.js ≥18](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 A/B test your coding-agent instruction files (`CLAUDE.md`, `AGENTS.md`, …) against
-real tasks from your own repo. Linters check structure and optimizers guess —
-optirule **measures** whether your instructions actually make the agent work more
-efficiently, and shows what each section costs in tokens.
+real tasks from your own repo. Optirule measures which written rules prevent
+mistakes, which ones the agent follows anyway, and whether the resulting code
+actually works. Tokens remain visible as cost, not as the definition of success.
 
 ## Requirements
 
@@ -19,61 +17,85 @@ efficiently, and shows what each section costs in tokens.
 
 ## Quick start
 
+The npm package has not been published yet. Until the first release, install the
+CLI from a local clone:
+
 ```bash
-npx optirule init             # detect instruction files, scaffold optirule.yml
-npx optirule run              # benchmark: no instructions vs your instructions
-npx optirule run --ablate     # also measure each section's impact (leave-one-out)
-npx optirule export --minimal # write a trimmed file, keeping only load-bearing sections
+git clone https://github.com/BaconMan1168/optirule.git
+cd optirule
+npm install
+npm run build
+npm link
 ```
+
+Then run:
+
+```bash
+optirule init               # detect instruction files, scaffold optirule.yml
+optirule lint               # extract an editable rule rubric; review it first
+optirule run                # benchmark: no instructions vs your instructions
+optirule run --ablate       # also measure each section's impact (leave-one-out)
+optirule run --ablate-files # also remove each whole instruction file in turn
+optirule export --minimal   # write a trimmed file, keeping only load-bearing sections
+```
+
+After the first npm release, the same commands can be run as
+`npx optirule <command>` without cloning or linking the repository.
 
 `run` writes a self-contained report to `.optirule/report.html`.
 
 ## How it works
 
-For every task, optirule runs your agent twice in isolated git worktrees:
+For every task, optirule runs your agent twice in a history-free snapshot:
 
 | Variant    | Instruction file |
 | ---------- | ---------------- |
 | `baseline` | hidden           |
 | `current`  | present          |
 
-Each variant runs `reps` times (default 5; agents are non-deterministic, so a
-single run is noise). Modern agents pass most tasks either way, so the **primary
-signal is efficiency, not pass/fail**: the report headlines the change in agent
-**token usage** (`current` vs `baseline`), shows runtime / files-changed / files-read
-alongside it, keeps pass rate as one demoted column, and pairs it all with a
-plain-language **recommendation**. Pass/fail is still recorded — the ~1% where a
-section actually breaks correctness is worth catching.
+Each variant runs `reps` times (default 3; agents are non-deterministic, so a
+single run is noise). Every run happens in a **history-free snapshot** of your
+repo at the task's start commit — one commit, no future history — so the agent
+cannot read the commit that solves its own task.
 
-### Per-section impact (`--ablate`)
+For tasks taken from git history, success is the commit's own tests: optirule
+restores the test files the fix commit touched, at their post-fix content, after
+the agent finishes and after its diff has been measured. Those tests fail at the
+start commit and pass only if the agent actually did the work, so **pass/fail
+measures task completion**.
 
-`run --ablate` adds a leave-one-out sweep: for each `##` section it runs one more
-variant with that section removed, then reports the **token impact** `ablated
-tokens − current tokens`. Positive means the agent burned more tokens without the
-section (it earns its keep); ~0 means no measurable effect; negative means the
-section made the agent burn more. This costs one extra variant per section, so
-the estimate scales with section count — that's why it's opt-in.
+Before the benchmark, `optirule lint` asks the configured built-in agent to turn
+each instruction file into `optirule.rubric.yml`. Review and edit that file: it
+is the scoring contract. Rules use one of five checks:
 
-The keep/drop call keys off **tokens** — a section earns its keep only if removing
-it moves agent token usage past a ±20% neutral band (tokens vary ~2× run-to-run on
-the same task, so smaller effects are noise). Each row carries an honest signal:
-**earns its keep**, **no measurable impact**, **actively hurts**, **too small to
-measure** (too tiny a share of the file to attribute an effect to), or **low
-confidence** (too few runs, or the agent reports no token counts). Token effects
-are noisy, so raise `reps` (10+) for sharper per-section verdicts.
+- `files-touched`: allow or forbid path globs.
+- `command-used`: require or ban shell-command fragments.
+- `public-api-preserved`: flag removed or changed exported signatures.
+- `no-new-env-vars`: flag newly introduced environment-variable names.
+- `judge`: ask one blind yes/no model question, batched with all judge rules.
 
-`export --minimal` reads the last ablation run and writes `<file>.optirule.md`
-(or `--out <path>`) keeping only load-bearing sections — it drops sections whose
-removal didn't cost tokens (dead weight) or freed tokens (actively hurts), never
-overwriting your original. The trimmed file is validated only against your task
-set, so sections it removes may still matter for tasks outside your benchmark.
+The report leads with **mistakes avoided**: baseline rule violations minus
+current rule violations, paired by task with a reproducible 95% interval. It
+keeps compliance separate from quality (test pass/fail) and reports tokens,
+runtime, churn, tool calls, and files touched/read as cost and effort.
+
+Every section receives one of five evidence labels: **earns its keep** (helped on
+at least two tasks), **one task only**, **redundant**, **never exercised**, or
+**harmful**. `export --minimal` removes only redundant or harmful sections. A
+never-exercised guardrail is unproven, not useless, so it is never dropped.
+
+`--ablate` still adds a leave-one-section-out sweep for interaction and token
+effects. `--ablate-files` does the same for each whole instruction file. Both
+increase the invocation count shown before confirmation.
 
 Tasks come from two sources, manual entries first:
 
 - **optirule.yml** — tasks you define, with a `success` command.
-- **Git history** — the most recent `feat:`/`fix:`/`bug`/`closes #` commits. Each
-  starts from the commit's parent with the commit message as the prompt; optirule
-  measures how efficiently the agent redoes that work.
+- **Git history** — the most recent `feat:`/`fix:`/`bug`/`closes #` commits that
+  **changed test files**. Each starts from the commit's parent with the commit
+  message as the prompt, and is scored against that commit's tests. Commits with
+  no test change are skipped, as are commits whose tests already pass at the
+  parent — neither can distinguish a working agent from an idle one.
 
 Before spending money, `run` prints the planned invocation count and instruction
 token cost and asks to proceed (`--yes` skips the prompt).
@@ -85,8 +107,8 @@ agent: claude                 # built-in adapter, or an object with a command:
 instruction_files:
   - CLAUDE.md
 test_command: node --test
-max_tasks: 8
-reps: 5
+max_tasks: 15
+reps: 3
 tasks:
   - id: fix-auth-expiry
     prompt: "Fix the auth failure when the token expires before refresh"
@@ -143,19 +165,22 @@ aider at the backend with its own env vars, then select the model with
 
 Endpoints and keys stay in the agent's environment — optirule never handles them.
 
-The report shows **avg files read** alongside tokens and files changed when the
-adapter can report it (`claude` via its `Read` tool calls, `aider` from its chat
-log); it reads `—` for adapters that don't expose it.
+The report shows churn, tool calls, and files read alongside tokens and files
+changed when the adapter exposes them; unavailable values read `—`.
 
 ## Caveats
 
-- Agent token usage varies ~2× run-to-run on the same task, so a delta from few
-  runs is within noise; the report flags low confidence. Increase `reps` or add
-  tasks to trust it.
-- A section that is a small share of the whole file can't be measured by
-  ablation even when it matters; those rows read "too small to measure".
-- Efficiency, not correctness, is the headline — a section that measurably saves
-  no tokens can still matter for tasks outside your benchmark.
+- A task is only as good as the test the fix commit shipped. A thin test scores a
+  thin solution as a pass.
+- Commit subjects are terse prompts. A task whose commit message does not explain
+  the intent may be unsolvable for reasons unrelated to your instructions.
+- Compliance is not quality. An agent can follow every rule and still fail the
+  task, so test pass/fail stays beside compliance in the report.
+- Rubric extraction is a model reading prose. Review `optirule.rubric.yml`
+  before it decides anything.
+- `public-api-preserved` is a diff-text heuristic, not type-aware analysis.
+- Rules that never apply to the task set remain protected; the benchmark has no
+  evidence about whether those guardrails are useful.
 
 ## Development
 

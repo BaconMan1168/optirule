@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { slugify, planVariants } from "../src/variants.js";
+import { slugify, planVariants, planFileVariants } from "../src/variants.js";
 import type { ParsedSection } from "../src/sections.js";
 
 function section(title: string): ParsedSection {
@@ -10,6 +10,23 @@ describe("slugify", () => {
   it("makes titles path-safe", () => {
     expect(slugify("Testing / Style")).toBe("testing-style");
     expect(slugify("!!!")).toBe("section");
+  });
+});
+
+describe("planFileVariants", () => {
+  it("makes one path-safe ablation variant per instruction file", () => {
+    const variants = planFileVariants(["CLAUDE.md", ".claude/rules.md"]);
+    expect(variants.map((variant) => variant.id)).toEqual([
+      "ablate-file-claude-md",
+      "ablate-file-claude-rules-md",
+    ]);
+    expect(variants.every((variant) => variant.kind === "ablate-file")).toBe(true);
+  });
+  it("disambiguates file paths that slug alike", () => {
+    expect(planFileVariants(["a/b.md", "a-b.md"]).map((variant) => variant.id)).toEqual([
+      "ablate-file-a-b-md",
+      "ablate-file-a-b-md-2",
+    ]);
   });
 });
 

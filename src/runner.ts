@@ -1,33 +1,42 @@
-import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import type { OptiruleConfig } from "./config.js";
 import type { AgentAdapter } from "./adapters.js";
-import type { Task, RunResult } from "./types.js";
+import type { Task, RunResult, TestFile } from "./types.js";
 import type { VariantSpec } from "./variants.js";
+import type { Rule } from "./rubric.js";
+import type { RunContext } from "./checks.js";
 import { removeSection } from "./sections.js";
-import { setupWorktree, teardownWorktree } from "./worktree.js";
-import { changedFiles } from "./git.js";
+import { createSnapshot, destroySnapshot, stageDependencies } from "./snapshot.js";
+import { changedFiles, unifiedDiff, churnLines, includeUntrackedInDiff } from "./git.js";
 import { runSpec, runShell } from "./exec.js";
-import { RUNS_DIR, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constants.js";
+import { SNAPSHOT_PREFIX, AGENT_TIMEOUT_MS, SUCCESS_TIMEOUT_MS } from "./constants.js";
+import { evaluateDeterministic, classifyFailure } from "./evaluate.js";
+import { judgeRun } from "./judge.js";
 
 /** Called after each completed run so callers can report live progress. */
 export type ProgressFn = (result: RunResult) => void;
 
 /**
- * Put the worktree into the state a variant requires. `current` writes each
+ * Put the snapshot into the state a variant requires. `current` writes each
  * instruction file's present-day content (not the version at the task's start
  * ref); `baseline` removes them all; `ablate` writes them but with one section
  * removed from its source file.
  */
 function applyVariant(
-  worktree: string,
+  snapshot: string,
   instructionFiles: string[],
   contents: Map<string, string>,
   variant: VariantSpec,
 ): void {
   for (const file of instructionFiles) {
-    const dest = `${worktree}/${file}`;
+    const dest = `${snapshot}/${file}`;
     if (variant.kind === "baseline") {
+      if (existsSync(dest)) rmSync(dest);
+      continue;
+    }
+    if (variant.kind === "ablate-file" && variant.file === file) {
       if (existsSync(dest)) rmSync(dest);
       continue;
     }
@@ -42,42 +51,82 @@ function applyVariant(
   }
 }
 
+/**
+ * Restore the task's test files at their post-fix content. Called only after
+ * the agent's diff has been measured, so these files are never counted as the
+ * agent's own changes.
+ */
+export function applyTestPatch(dir: string, testFiles: TestFile[]): void {
+  for (const file of testFiles) {
+    const dest = join(dir, file.path);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, file.content);
+  }
+}
+
 /** Run every repetition of every variant for one task, sequentially. */
 async function runTask(
   repoDir: string,
+  sessionDir: string,
+  modulesDir: string | undefined,
   adapter: AgentAdapter,
   task: Task,
   contents: Map<string, string>,
   variants: VariantSpec[],
+  rules: Rule[],
   reps: number,
   onProgress?: ProgressFn,
 ): Promise<RunResult[]> {
   const results: RunResult[] = [];
   for (const variant of variants) {
     for (let rep = 0; rep < reps; rep++) {
-      const path = `${repoDir}/${RUNS_DIR}/${task.id}/${variant.id}/rep-${rep}`;
+      const path = join(sessionDir, task.id, variant.id, `rep-${rep}`);
       try {
-        await setupWorktree(repoDir, task.startRef, path);
+        await createSnapshot(repoDir, task.startRef, path, modulesDir);
         applyVariant(path, adapter.instructionFiles, contents, variant);
         const agent = await runSpec(adapter.buildCommand(task.prompt), path, AGENT_TIMEOUT_MS);
-        const check = await runShell(task.successCommand, path, SUCCESS_TIMEOUT_MS);
+        // Measure the agent's diff before restoring tests, or the test files
+        // we write would be attributed to the agent.
+        await includeUntrackedInDiff(path);
         const changed = (await changedFiles(path)).filter(
           (f) => !adapter.instructionFiles.includes(f),
         );
+        const ctx: RunContext = {
+          filesChanged: changed,
+          diff: await unifiedDiff(path, adapter.instructionFiles),
+          commands: adapter.parseCommands?.(agent.stdout) ?? [],
+          timedOut: agent.timedOut,
+        };
+        const churn = await churnLines(path, adapter.instructionFiles);
+        const deterministic = evaluateDeterministic(rules, ctx);
+        const judged = await judgeRun(
+          adapter,
+          task.prompt,
+          rules.filter((rule) => rule.check.kind === "judge"),
+          ctx,
+        );
+        const verdicts = [...deterministic, ...judged];
+        applyTestPatch(path, task.testFiles);
+        const check = await runShell(task.successCommand, path, SUCCESS_TIMEOUT_MS);
+        const passed = check.exitCode === 0;
         const result: RunResult = {
           taskId: task.id,
           variant: variant.id,
           rep,
-          passed: check.exitCode === 0,
+          passed,
           durationMs: agent.durationMs,
           tokens: adapter.parseTokenUsage(agent.stdout),
           filesChanged: changed,
           filesRead: adapter.parseFilesRead?.(agent.stdout),
+          verdicts,
+          churn,
+          toolCalls: adapter.parseToolCalls?.(agent.stdout),
+          failure: classifyFailure(passed, ctx, verdicts),
         };
         results.push(result);
         onProgress?.(result);
       } finally {
-        await teardownWorktree(repoDir, path);
+        destroySnapshot(path);
       }
     }
   }
@@ -101,12 +150,32 @@ export async function runAll(
   adapter: AgentAdapter,
   tasks: Task[],
   variants: VariantSpec[],
+  rules: Rule[] = [],
   onProgress?: ProgressFn,
 ): Promise<RunResult[]> {
   const contents = loadInstructionContents(repoDir, adapter.instructionFiles);
+  const sessionDir = mkdtempSync(join(tmpdir(), SNAPSHOT_PREFIX));
+  const modulesDir = stageDependencies(repoDir, sessionDir);
   const all: RunResult[] = [];
-  for (const task of tasks) {
-    all.push(...(await runTask(repoDir, adapter, task, contents, variants, config.reps, onProgress)));
+  try {
+    for (const task of tasks) {
+      all.push(
+        ...(await runTask(
+          repoDir,
+          sessionDir,
+          modulesDir,
+          adapter,
+          task,
+          contents,
+          variants,
+          rules,
+          config.reps,
+          onProgress,
+        )),
+      );
+    }
+  } finally {
+    rmSync(sessionDir, { recursive: true, force: true });
   }
   return all;
 }
