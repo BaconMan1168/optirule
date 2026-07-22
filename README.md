@@ -1,14 +1,12 @@
 # optirule
 
-[![npm version](https://img.shields.io/npm/v/optirule.svg)](https://www.npmjs.com/package/optirule)
-[![npm downloads](https://img.shields.io/npm/dm/optirule.svg)](https://www.npmjs.com/package/optirule)
-[![node](https://img.shields.io/node/v/optirule.svg)](https://www.npmjs.com/package/optirule)
-[![license](https://img.shields.io/npm/l/optirule.svg)](./LICENSE)
+[![Node.js ≥18](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 A/B test your coding-agent instruction files (`CLAUDE.md`, `AGENTS.md`, …) against
-real tasks from your own repo. Linters check structure and optimizers guess —
-optirule **measures** whether your instructions actually make the agent work more
-efficiently, and shows what each section costs in tokens.
+real tasks from your own repo. Optirule measures which written rules prevent
+mistakes, which ones the agent follows anyway, and whether the resulting code
+actually works. Tokens remain visible as cost, not as the definition of success.
 
 ## Requirements
 
@@ -19,14 +17,30 @@ efficiently, and shows what each section costs in tokens.
 
 ## Quick start
 
+The npm package has not been published yet. Until the first release, install the
+CLI from a local clone:
+
 ```bash
-npx optirule init             # detect instruction files, scaffold optirule.yml
-npx optirule lint             # extract an editable rule rubric; review it first
-npx optirule run              # benchmark: no instructions vs your instructions
-npx optirule run --ablate     # also measure each section's impact (leave-one-out)
-npx optirule run --ablate-files # also remove each whole instruction file in turn
-npx optirule export --minimal # write a trimmed file, keeping only load-bearing sections
+git clone https://github.com/BaconMan1168/optirule.git
+cd optirule
+npm install
+npm run build
+npm link
 ```
+
+Then run:
+
+```bash
+optirule init               # detect instruction files, scaffold optirule.yml
+optirule lint               # extract an editable rule rubric; review it first
+optirule run                # benchmark: no instructions vs your instructions
+optirule run --ablate       # also measure each section's impact (leave-one-out)
+optirule run --ablate-files # also remove each whole instruction file in turn
+optirule export --minimal   # write a trimmed file, keeping only load-bearing sections
+```
+
+After the first npm release, the same commands can be run as
+`npx optirule <command>` without cloning or linking the repository.
 
 `run` writes a self-contained report to `.optirule/report.html`.
 
