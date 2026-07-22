@@ -33,6 +33,35 @@ export async function changedFiles(cwd: string): Promise<string[]> {
   return out ? out.split("\n") : [];
 }
 
+/** Run a git command without trimming, for content that must survive verbatim. */
+async function gitRaw(args: string[], cwd: string): Promise<string> {
+  const { stdout } = await execa("git", args, { cwd, stripFinalNewline: false });
+  return stdout;
+}
+
+/** Files changed between two commits, oldest ref first. */
+export async function filesChangedBetween(
+  from: string,
+  to: string,
+  cwd: string,
+): Promise<string[]> {
+  const out = await git(["diff", "--name-only", from, to], cwd);
+  return out ? out.split("\n") : [];
+}
+
+/** A file's content at `ref`, or undefined when it does not exist there. */
+export async function fileAtRef(
+  ref: string,
+  path: string,
+  cwd: string,
+): Promise<string | undefined> {
+  try {
+    return await gitRaw(["show", `${ref}:${path}`], cwd);
+  } catch {
+    return undefined;
+  }
+}
+
 const COMMIT_PATTERN = "^feat|^fix|\\bbug\\b|closes #|resolves #";
 
 /**
