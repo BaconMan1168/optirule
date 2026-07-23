@@ -1,5 +1,6 @@
 # optirule
 
+[![npm version](https://img.shields.io/npm/v/optirule.svg?logo=npm)](https://www.npmjs.com/package/optirule)
 [![Node.js ≥18](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
@@ -17,15 +18,16 @@ actually works. Tokens remain visible as cost, not as the definition of success.
 
 ## Quick start
 
-The npm package has not been published yet. Until the first release, install the
-CLI from a local clone:
+Run it without installing:
 
 ```bash
-git clone https://github.com/BaconMan1168/optirule.git
-cd optirule
-npm install
-npm run build
-npm link
+npx optirule <command>
+```
+
+Or install the CLI globally:
+
+```bash
+npm install -g optirule
 ```
 
 Then run:
@@ -38,9 +40,6 @@ optirule run --ablate       # also measure each section's impact (leave-one-out)
 optirule run --ablate-files # also remove each whole instruction file in turn
 optirule export --minimal   # write a trimmed file, keeping only load-bearing sections
 ```
-
-After the first npm release, the same commands can be run as
-`npx optirule <command>` without cloning or linking the repository.
 
 `run` writes a self-contained report to `.optirule/report.html`.
 
