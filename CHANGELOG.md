@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Give the intentional probe-timeout test enough CI scheduling headroom while
+  keeping its simulated hang short.
+- Align Node.js type definitions with the minimum supported Node.js 22 runtime.
+- Move CI actions to their Node.js 24-based releases.
+
 ## [0.1.1] - 2026-07-23
 
 ### Added
