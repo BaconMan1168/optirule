@@ -4,7 +4,7 @@
   "description": "A/B test your coding-agent instruction files against real tasks from your own repo.",
   "type": "module",
   "license": "MIT",
-  "author": "BaconMan1168",
+  "author": "BaconMan1168 <dguirao20@gmail.com> (https://github.com/BaconMan1168)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BaconMan1168/optirule.git"
