@@ -1,13 +1,58 @@
 # optirule
 
 [![npm version](https://img.shields.io/npm/v/optirule.svg?logo=npm)](https://www.npmjs.com/package/optirule)
+[![CI](https://github.com/BaconMan1168/optirule/actions/workflows/ci.yml/badge.svg)](https://github.com/BaconMan1168/optirule/actions/workflows/ci.yml)
 [![Node.js ≥22.12](https://img.shields.io/badge/node-%E2%89%A522.12-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-A/B test your coding-agent instruction files (`CLAUDE.md`, `AGENTS.md`, …) against
-real tasks from your own repo. Optirule measures which written rules prevent
-mistakes, which ones the agent follows anyway, and whether the resulting code
-actually works. Tokens remain visible as cost, not as the definition of success.
+**Stop guessing what belongs in your coding-agent instructions.**
+
+Optirule replays real fixes from your repository with and without `CLAUDE.md`,
+`AGENTS.md`, and similar files. It shows which rules prevent mistakes, whether
+the resulting code passes its tests, and what the instructions cost in tokens
+and runtime.
+
+## Quick start
+
+From the root of a git repository that already has an instruction file:
+
+```bash
+npx optirule@latest init
+npx optirule@latest lint
+npx optirule@latest run
+```
+
+`init` detects your files and agent. `lint` turns the written rules into a
+reviewable scoring rubric. `run` compares no instructions with your current
+instructions and writes a self-contained report to `.optirule/report.html`.
+
+Before any benchmark spend, optirule prints the planned number of full agent
+invocations and waits for confirmation.
+
+For repeated use, install the CLI globally:
+
+```bash
+npm install -g optirule
+```
+
+Additional analysis and export commands:
+
+```bash
+optirule run --ablate       # measure each section with leave-one-out runs
+optirule run --ablate-files # remove each whole instruction file in turn
+optirule export --minimal   # keep only sections supported by the last run
+```
+
+## What you learn
+
+- **Quality:** Did the agent complete the task and pass the relevant tests?
+- **Compliance:** Which written rules prevented observable mistakes?
+- **Cost:** How did instructions change tokens, runtime, churn, and tool use?
+- **Section impact:** Which sections helped, did nothing, or caused regressions?
+
+Optirule is deliberately narrower than a general LLM evaluation framework. It
+tests repository-level coding-agent instructions against executable work from
+that repository's own history.
 
 ## Requirements
 
@@ -15,33 +60,6 @@ actually works. Tokens remain visible as cost, not as the definition of success.
 - A **git repository** to run in (optirule works from your project root)
 - At least one **coding-agent CLI** on your `PATH` (`claude`, `codex`, `gemini`,
   `opencode`, or `aider`) — or any agent wired up via a custom command
-
-## Quick start
-
-Run it without installing:
-
-```bash
-npx optirule <command>
-```
-
-Or install the CLI globally:
-
-```bash
-npm install -g optirule
-```
-
-Then run:
-
-```bash
-optirule init               # detect instruction files, scaffold optirule.yml
-optirule lint               # extract an editable rule rubric; review it first
-optirule run                # benchmark: no instructions vs your instructions
-optirule run --ablate       # also measure each section's impact (leave-one-out)
-optirule run --ablate-files # also remove each whole instruction file in turn
-optirule export --minimal   # write a trimmed file, keeping only load-bearing sections
-```
-
-`run` writes a self-contained report to `.optirule/report.html`.
 
 ## How it works
 
@@ -180,6 +198,19 @@ changed when the adapter exposes them; unavailable values read `—`.
 - `public-api-preserved` is a diff-text heuristic, not type-aware analysis.
 - Rules that never apply to the task set remain protected; the benchmark has no
   evidence about whether those guardrails are useful.
+
+## Safety and privacy
+
+Optirule creates temporary, history-free repository snapshots and deletes them
+after the run. Reports stay local unless you choose to share them.
+
+The coding-agent CLI and success commands still run with your user account's
+environment and whatever network access those tools normally have. Optirule is
+not a security sandbox: use trusted repositories, instruction files, task
+prompts, and commands, and review which credentials your agent CLI can access.
+
+Please report security issues privately as described in
+[SECURITY.md](SECURITY.md).
 
 ## Development
 

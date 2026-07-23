@@ -1,0 +1,57 @@
+name: Bug report
+description: Report reproducible behavior that does not work as expected.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve optirule. Please remove sensitive repository data and credentials from all output.
+  - type: input
+    id: version
+    attributes:
+      label: Optirule version
+      description: Run `optirule --version`.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and version
+      description: Include the coding-agent CLI and its version.
+      placeholder: codex 1.2.3
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include your operating system and Node.js version.
+      placeholder: macOS 15, Node.js 24.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: List the smallest set of steps that reproduces the problem.
+      placeholder: |
+        1. Run ...
+        2. Configure ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include relevant output after removing secrets and private code.
+    validations:
+      required: true

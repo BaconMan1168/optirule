@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- GitHub issue forms, a pull request template, and private security-reporting
+  guidance for contributors.
+
 ### Fixed
 
 - Align the documented Node.js requirement and CI matrix with the supported
