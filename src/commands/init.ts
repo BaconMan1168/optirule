@@ -26,5 +26,5 @@ export function runInit(repoDir: string): void {
   const found = installed.length ? installed.join(", ") : "none on PATH";
   console.log(`Wrote ${CONFIG_FILENAME} (agent: ${agent}, files: ${files.join(", ")}).`);
   console.log(`Detected agent CLIs: ${found}.`);
-  console.log("Next: review the file, then run `optirule run`.");
+  console.log("Next: review the file, then run `optirule lint`.");
 }

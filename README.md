@@ -1,7 +1,7 @@
 # optirule
 
 [![npm version](https://img.shields.io/npm/v/optirule.svg?logo=npm)](https://www.npmjs.com/package/optirule)
-[![Node.js ≥18](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js ≥22.12](https://img.shields.io/badge/node-%E2%89%A522.12-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 A/B test your coding-agent instruction files (`CLAUDE.md`, `AGENTS.md`, …) against
@@ -11,7 +11,7 @@ actually works. Tokens remain visible as cost, not as the definition of success.
 
 ## Requirements
 
-- **Node.js ≥ 18**
+- **Node.js ≥ 22.12**
 - A **git repository** to run in (optirule works from your project root)
 - At least one **coding-agent CLI** on your `PATH` (`claude`, `codex`, `gemini`,
   `opencode`, or `aider`) — or any agent wired up via a custom command

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Align the documented Node.js requirement and CI matrix with the supported
+  runtime range of the CLI's dependencies.
+- Direct new users to audit their instruction files with `optirule lint` before
+  running a benchmark.
+
 ## [0.1.0] - 2026-07-23
 
 Initial release.
