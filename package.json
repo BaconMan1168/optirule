@@ -1,6 +1,6 @@
 {
   "name": "optirule",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A/B test your coding-agent instruction files against real tasks from your own repo.",
   "type": "module",
   "license": "MIT",
