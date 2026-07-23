@@ -26,7 +26,7 @@
     "AGENTS.md"
   ],
   "bin": {
-    "optirule": "./dist/cli.js"
+    "optirule": "dist/cli.js"
   },
   "files": [
     "dist"
