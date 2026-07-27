@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
-import { loadConfig } from "../config.js";
+import { loadConfig, applyRunOverrides } from "../config.js";
 import { resolveAdapter } from "../adapters.js";
 import { detectAgent } from "../detect.js";
 import { parseSections } from "../sections.js";
@@ -19,6 +19,8 @@ export interface RunOptions {
   agent?: string;
   ablate?: boolean;
   ablateFiles?: boolean;
+  reps?: string;
+  maxTasks?: string;
 }
 
 /** Parse and merge sections across every instruction file being tested. */
@@ -33,7 +35,7 @@ function loadSections(repoDir: string, files: string[]): ParsedSection[] {
 
 /** Full benchmark: collect tasks, confirm cost, run variants, write report. */
 export async function runBenchmark(repoDir: string, options: RunOptions): Promise<void> {
-  const config = loadConfig(repoDir);
+  const config = applyRunOverrides(loadConfig(repoDir), options);
   const agentSpec = options.agent ?? config.agent;
   const detected = detectAgent();
   if (detected && typeof agentSpec === "string" && detected === agentSpec) {

@@ -37,6 +37,8 @@ program
   .option("--agent <name>", "override the configured agent")
   .option("--ablate", "also measure each section's impact via leave-one-out ablation")
   .option("--ablate-files", "also measure each whole instruction file's impact")
+  .option("--reps <count>", "override reps per variant (lower is cheaper and noisier)")
+  .option("--max-tasks <count>", "override how many tasks to collect")
   .action(async (options) => {
     try {
       await runBenchmark(process.cwd(), options);

@@ -57,6 +57,30 @@ export function loadConfig(dir: string): OptiruleConfig {
   };
 }
 
+function parseCount(value: string | undefined, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+  const count = Number(value);
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(`${flag} must be a positive integer.`);
+  }
+  return count;
+}
+
+/**
+ * Apply per-run CLI overrides to a loaded config, so a first run can be scoped
+ * down (`--max-tasks 2 --reps 1`) without editing optirule.yml.
+ */
+export function applyRunOverrides(
+  config: OptiruleConfig,
+  overrides: { reps?: string; maxTasks?: string },
+): OptiruleConfig {
+  return {
+    ...config,
+    reps: parseCount(overrides.reps, "--reps") ?? config.reps,
+    max_tasks: parseCount(overrides.maxTasks, "--max-tasks") ?? config.max_tasks,
+  };
+}
+
 /** Render a starter optirule.yml given detected files and agent. */
 export function scaffoldConfig(instructionFiles: string[], agent: string): string {
   const config = {
