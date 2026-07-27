@@ -5,29 +5,64 @@
 [![Node.js ≥22.12](https://img.shields.io/badge/node-%E2%89%A522.12-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-**Stop guessing what belongs in your coding-agent instructions.**
+**Does your `CLAUDE.md` actually help? Measure it instead of guessing.**
 
-Optirule replays real fixes from your repository with and without `CLAUDE.md`,
-`AGENTS.md`, and similar files. It shows which rules prevent mistakes, whether
-the resulting code passes its tests, and what the instructions cost in tokens
-and runtime.
+[Recent research](https://arxiv.org/abs/2602.11988) found that repository context
+files do not generally improve task success rates, while raising inference cost
+by more than 20%. Other tools respond by rewriting your instruction file against
+a heuristic. Optirule does the opposite: it **runs the experiment on your repo**
+and reports which of your rules actually change agent behaviour.
+
+It replays real fixes from your own git history with and without `CLAUDE.md`,
+`AGENTS.md`, and similar files, then reports which rules prevented mistakes,
+whether the resulting code passed its tests, and what the instructions cost in
+tokens and runtime.
 
 ## Quick start
 
 From the root of a git repository that already has an instruction file:
 
 ```bash
-npx optirule@latest init
-npx optirule@latest lint
-npx optirule@latest run
+npx optirule@latest init   # detect instruction files and agent, scaffold optirule.yml
+npx optirule@latest lint   # turn the written rules into a reviewable scoring rubric
 ```
 
-`init` detects your files and agent. `lint` turns the written rules into a
-reviewable scoring rubric. `run` compares no instructions with your current
-instructions and writes a self-contained report to `.optirule/report.html`.
+`init` and `lint` are cheap: `init` spends nothing and `lint` is a single model
+call. Review the generated `optirule.rubric.yml` — it is the scoring contract —
+then benchmark.
 
-Before any benchmark spend, optirule prints the planned number of full agent
-invocations and waits for confirmation.
+**Start small.** A first run is worth scoping down to two tasks and one rep, so
+you can see a real report before committing to a full benchmark:
+
+```bash
+npx optirule@latest run --max-tasks 2 --reps 1   # 4 agent invocations
+```
+
+Then run the full benchmark once you know the output is useful to you:
+
+```bash
+npx optirule@latest run                          # defaults to 90 invocations
+```
+
+`run` compares no instructions with your current instructions and writes a
+self-contained report to `.optirule/report.html`.
+
+### What a run costs
+
+Every invocation is a **full agent run** — minutes of wall clock and real token
+spend. The count is `tasks × variants × reps`:
+
+| Command | Tasks | Variants | Reps | Agent invocations |
+| --- | --- | --- | --- | --- |
+| `run --max-tasks 2 --reps 1` | 2 | 2 | 1 | **4** |
+| `run --max-tasks 5` | 5 | 2 | 3 | **30** |
+| `run` (defaults) | 15 | 2 | 3 | **90** |
+| `run --ablate` | 15 | 2 + one per section | 3 | **90 and up** |
+
+Fewer reps is cheaper and noisier — agents are non-deterministic, so the default
+of 3 exists for a reason and the report flags results too thin to trust. Optirule
+always prints the planned invocation count and instruction token cost and waits
+for confirmation before spending anything (`--yes` skips the prompt).
 
 For repeated use, install the CLI globally:
 
