@@ -1,0 +1,15 @@
+{
+  "name": "optirule",
+  "owner": {
+    "name": "Daniel Guirao"
+  },
+  "description": "Claude Code tools for measuring repository instruction quality with OptiRule.",
+  "plugins": [
+    {
+      "name": "optirule",
+      "source": ".",
+      "description": "Empirically evaluates CLAUDE.md and other repository instruction files.",
+      "version": "0.2.0"
+    }
+  ]
+}

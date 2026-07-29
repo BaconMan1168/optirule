@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `optirule run --plan` to collect measurable tasks and print the exact
   agent and judge invocation plan without starting any model calls.
+- Add a validated Claude Code plugin and the user-invoked `/optirule:audit`
+  skill for setup, rubric review, cost planning, benchmarking, reporting, and
+  safe minimal export.
 
 ### Fixed
 
