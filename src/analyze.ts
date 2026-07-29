@@ -64,6 +64,8 @@ export interface SectionImpact {
 }
 
 export interface Analysis {
+  /** Version of the machine-readable `.optirule/analysis.json` shape. */
+  schemaVersion: 1;
   variants: VariantSummary[];
   /** current pass rate minus baseline pass rate, in points (kept as a demoted metric). */
   passRateDeltaPct: number;
@@ -250,6 +252,7 @@ export function analyze(
     : undefined;
   const compliance = analyzeCompliance(results, rules);
   return {
+    schemaVersion: 1,
     variants: [baseline, current],
     passRateDeltaPct: (current.passRate - baseline.passRate) * 100,
     tokenDeltaPct,

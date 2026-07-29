@@ -30,6 +30,11 @@ function ablateVariant(id: string, title: string, tokens: number): VariantSpec {
 }
 
 describe("analyze", () => {
+  it("versions the machine-readable analysis shape", () => {
+    const a = analyze([...runs("baseline", 1), ...runs("current", 1)], [], 1);
+    expect(a.schemaVersion).toBe(1);
+  });
+
   it("computes pass-rate delta in percentage points (kept as a demoted metric)", () => {
     const results = [
       ...runs("baseline", 1, { passed: false }),

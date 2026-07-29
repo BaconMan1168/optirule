@@ -18,6 +18,7 @@ function summary(variant: string, over: Partial<VariantSummary> = {}): VariantSu
 
 function analysis(over: Partial<Analysis> = {}): Analysis {
   return {
+    schemaVersion: 1,
     variants: [summary("baseline"), summary("current")],
     passRateDeltaPct: 0,
     tokenDeltaPct: -18,

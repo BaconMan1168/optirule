@@ -48,6 +48,32 @@ npx optirule@latest run                          # defaults to 90 invocations
 `run` compares no instructions with your current instructions and writes a
 self-contained report to `.optirule/report.html`.
 
+## Claude Code skill
+
+Install the repository as a Claude Code plugin to run the guided workflow as a
+slash command:
+
+```text
+/plugin marketplace add BaconMan1168/optirule
+/plugin install optirule@optirule
+/reload-plugins
+/optirule:audit setup
+```
+
+The skill supports `setup`, `lint`, `plan`, `run`, `report`, and `export`:
+
+```text
+/optirule:audit lint
+/optirule:audit plan
+/optirule:audit run
+/optirule:audit report
+```
+
+It is deliberately user-invoked rather than automatic. Before a benchmark it
+runs the no-spend plan, reports the exact agent and judge invocation counts,
+and waits for explicit approval. The skill never overwrites the original
+instruction file.
+
 ### What a run costs
 
 Every invocation is a **full agent run** — minutes of wall clock and real token
@@ -89,6 +115,11 @@ optirule export --minimal   # keep only sections supported by the last run
 Optirule is deliberately narrower than a general LLM evaluation framework. It
 tests repository-level coding-agent instructions against executable work from
 that repository's own history.
+
+Unlike a static instruction-file linter, Optirule does not assign a quality
+score from prose alone. It observes whether the instructions change agent
+behaviour on executable tasks, while still exposing its generated compliance
+rubric for review before the benchmark.
 
 ## Requirements
 
@@ -152,6 +183,16 @@ Tasks come from two sources, manual entries first:
 
 Before spending money, `run` prints the planned invocation count and instruction
 token cost and asks to proceed (`--yes` skips the prompt).
+
+### Reports and automation
+
+Every completed run writes:
+
+- `.optirule/report.html` — a self-contained human-readable report.
+- `.optirule/analysis.json` — the same analysis as machine-readable JSON.
+
+The JSON includes `schemaVersion: 1` so skills and other local automation can
+detect future format changes instead of silently misreading a report.
 
 ## optirule.yml
 
@@ -239,6 +280,12 @@ changed when the adapter exposes them; unavailable values read `—`.
 
 Optirule creates temporary, history-free repository snapshots and deletes them
 after the run. Reports stay local unless you choose to share them.
+
+Claude Code benchmark subprocesses do not inherit the invoking Claude session's
+identity. Each subprocess gets a private temporary directory, ignores ambient
+MCP servers, and disables session persistence. This lets the
+`/optirule:audit` skill start isolated benchmark agents without polluting the
+parent session or the session picker.
 
 The coding-agent CLI and success commands still run with your user account's
 environment and whatever network access those tools normally have. Optirule is

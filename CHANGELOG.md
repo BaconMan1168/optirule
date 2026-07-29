@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a validated Claude Code plugin and the user-invoked `/optirule:audit`
   skill for setup, rubric review, cost planning, benchmarking, reporting, and
   safe minimal export.
+- Add `schemaVersion: 1` to `.optirule/analysis.json` as a stable integration
+  check for skills and local automation.
 
 ### Fixed
 
