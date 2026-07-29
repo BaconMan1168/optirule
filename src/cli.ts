@@ -39,6 +39,7 @@ program
   .option("--ablate-files", "also measure each whole instruction file's impact")
   .option("--reps <count>", "override reps per variant (lower is cheaper and noisier)")
   .option("--max-tasks <count>", "override how many tasks to collect")
+  .option("--plan", "print the measured task and cost plan without running agents")
   .action(async (options) => {
     try {
       await runBenchmark(process.cwd(), options);

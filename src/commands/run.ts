@@ -21,6 +21,7 @@ export interface RunOptions {
   ablateFiles?: boolean;
   reps?: string;
   maxTasks?: string;
+  plan?: boolean;
 }
 
 /** Parse and merge sections across every instruction file being tested. */
@@ -94,6 +95,10 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
   console.log(`\n${formatPlan(plan)}\n`);
   const warning = powerWarning(tasks.length);
   if (warning) console.log(`⚠ ${warning}\n`);
+  if (options.plan) {
+    console.log("Plan only — no agent or judge invocations were run.");
+    return;
+  }
   if (!options.yes && !(await confirm("Proceed?"))) {
     console.log("Aborted.");
     return;

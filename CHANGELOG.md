@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `optirule run --plan` to collect measurable tasks and print the exact
+  agent and judge invocation plan without starting any model calls.
+
 ### Fixed
 
 - Isolate Claude Code subprocesses from a parent Claude session, disable ambient

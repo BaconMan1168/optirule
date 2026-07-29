@@ -35,7 +35,8 @@ then benchmark.
 you can see a real report before committing to a full benchmark:
 
 ```bash
-npx optirule@latest run --max-tasks 2 --reps 1   # 4 agent invocations
+npx optirule@latest run --max-tasks 2 --reps 1 --plan # inspect cost, spend nothing
+npx optirule@latest run --max-tasks 2 --reps 1        # 4 agent invocations
 ```
 
 Then run the full benchmark once you know the output is useful to you:
