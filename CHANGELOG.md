@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Isolate Claude Code subprocesses from a parent Claude session, disable ambient
+  MCP servers and session persistence, and give each invocation a private
+  temporary directory so Optirule can run safely from a Claude Code skill.
 - Give the intentional probe-timeout test enough CI scheduling headroom while
   keeping its simulated hang short.
 - Align Node.js type definitions with the minimum supported Node.js 22 runtime.

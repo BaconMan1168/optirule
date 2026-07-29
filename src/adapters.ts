@@ -6,6 +6,8 @@ export interface SpawnSpec {
   args: string[];
   /** Run through a shell, used by the generic template adapter. */
   shell?: boolean;
+  /** Remove parent Claude session markers and use a private temp directory. */
+  isolateClaudeSession?: boolean;
 }
 
 export interface AgentAdapter {
@@ -123,15 +125,31 @@ function claudeAdapter(instructionFiles: string[]): AgentAdapter {
           "--output-format",
           "stream-json",
           "--verbose",
+          "--strict-mcp-config",
+          "--no-session-persistence",
+          "--no-chrome",
           "--permission-mode",
           "acceptEdits",
         ],
+        isolateClaudeSession: true,
       };
     },
     buildJudgeCommand(prompt) {
       return {
         command: "claude",
-        args: ["-p", prompt, "--output-format", "stream-json", "--verbose"],
+        args: [
+          "-p",
+          prompt,
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--strict-mcp-config",
+          "--no-session-persistence",
+          "--no-chrome",
+          "--tools",
+          "",
+        ],
+        isolateClaudeSession: true,
       };
     },
     extractText: textFromJsonLines,

@@ -13,9 +13,30 @@ describe("claude adapter", () => {
       "--output-format",
       "stream-json",
       "--verbose",
+      "--strict-mcp-config",
+      "--no-session-persistence",
+      "--no-chrome",
       "--permission-mode",
       "acceptEdits",
     ]);
+    expect(spec.isolateClaudeSession).toBe(true);
+  });
+
+  it("runs judges without tools or ambient MCP servers", () => {
+    const spec = adapter.buildJudgeCommand("score the change");
+    expect(spec.args).toEqual([
+      "-p",
+      "score the change",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--strict-mcp-config",
+      "--no-session-persistence",
+      "--no-chrome",
+      "--tools",
+      "",
+    ]);
+    expect(spec.isolateClaudeSession).toBe(true);
   });
 
   it("sums token usage fields from the final result event", () => {
