@@ -152,10 +152,12 @@ function ablationSection(sections: SectionAblation[]): string {
   return `
 <h2>Section ablation (current vs leave-one-section-out)</h2>
 <p class="muted">Every delta is <code>current − ablated</code>; parentheses show <code>current / ablated</code>. Positive is favorable for pass rate and compliance; negative is favorable for mistakes and cost metrics. Neutral means sufficiently powered measurements stayed within practical-equivalence bands. Inconclusive means low confidence or conflicting signals, not neutrality.</p>
+<div class="table-scroll">
 <table>
   <thead><tr><th>Section</th><th>Classification</th><th>Confidence / runs</th><th>Pass Δ</th><th>Mistakes Δ</th><th>Compliance Δ</th><th>Tokens Δ</th><th>Runtime Δ</th><th>Churn Δ</th><th>Tools Δ</th><th>Reads Δ</th><th>Static removed</th></tr></thead>
   <tbody>${sections.map(ablationRow).join("")}</tbody>
-</table>`;
+</table>
+</div>`;
 }
 
 /** Render the analysis into a single self-contained HTML document. */
@@ -177,6 +179,7 @@ export function renderReport(analysis: Analysis): string {
   body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
   h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 2rem; }
   table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
+  .table-scroll { overflow-x: auto; }
   th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #8883; }
   th { font-weight: 600; } .muted { color: #8889; font-size: .85em; }
   .headline { font-size: 1.15rem; margin: 1rem 0; }

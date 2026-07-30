@@ -177,16 +177,19 @@ function compareMetric(
   };
 }
 
-function confidentDirection(
+function metricEvidence(
   metric: MetricComparison,
   band: number,
   helpfulWhenPositive: boolean,
-): "helpful" | "harmful" | undefined {
+): "helpful" | "harmful" | "equivalent" | "uncertain" | undefined {
   if (metric.change === undefined || !metric.confidenceInterval) return undefined;
   const [low, high] = metric.confidenceInterval;
-  if (Math.abs(metric.change) < band || (low <= 0 && high >= 0)) return undefined;
-  const positive = metric.change > 0;
-  return positive === helpfulWhenPositive ? "helpful" : "harmful";
+  if (Math.abs(metric.change) >= band && (low > 0 || high < 0)) {
+    const positive = metric.change > 0;
+    return positive === helpfulWhenPositive ? "helpful" : "harmful";
+  }
+  if (low >= -band && high <= band) return "equivalent";
+  return "uncertain";
 }
 
 function relativeBand(metric: MetricComparison): number {
@@ -194,7 +197,7 @@ function relativeBand(metric: MetricComparison): number {
 }
 
 function classifyAblation(
-  confidence: AblationConfidence,
+  enoughPairs: boolean,
   comparisons: {
     passRate: MetricComparison;
     mistakes: MetricComparison;
@@ -205,24 +208,29 @@ function classifyAblation(
     toolCalls: MetricComparison;
     filesRead: MetricComparison;
   },
-): AblationClassification {
-  if (confidence === "low") return "inconclusive";
-  const directions = [
-    confidentDirection(comparisons.passRate, RATE_BAND, true),
-    confidentDirection(comparisons.mistakes, MISTAKE_BAND, false),
-    confidentDirection(comparisons.compliance, RATE_BAND, true),
-    confidentDirection(comparisons.tokens, relativeBand(comparisons.tokens), false),
-    confidentDirection(comparisons.runtimeMs, relativeBand(comparisons.runtimeMs), false),
-    confidentDirection(comparisons.churn, relativeBand(comparisons.churn), false),
-    confidentDirection(comparisons.toolCalls, relativeBand(comparisons.toolCalls), false),
-    confidentDirection(comparisons.filesRead, relativeBand(comparisons.filesRead), false),
-  ].filter((direction): direction is "helpful" | "harmful" => direction !== undefined);
-  const helpful = directions.includes("helpful");
-  const harmful = directions.includes("harmful");
-  if (helpful && harmful) return "inconclusive";
-  if (helpful) return "helpful";
-  if (harmful) return "harmful";
-  return "neutral";
+): { confidence: AblationConfidence; classification: AblationClassification } {
+  if (!enoughPairs) return { confidence: "low", classification: "inconclusive" };
+  const evidence = [
+    metricEvidence(comparisons.passRate, RATE_BAND, true),
+    metricEvidence(comparisons.mistakes, MISTAKE_BAND, false),
+    metricEvidence(comparisons.compliance, RATE_BAND, true),
+    metricEvidence(comparisons.tokens, relativeBand(comparisons.tokens), false),
+    metricEvidence(comparisons.runtimeMs, relativeBand(comparisons.runtimeMs), false),
+    metricEvidence(comparisons.churn, relativeBand(comparisons.churn), false),
+    metricEvidence(comparisons.toolCalls, relativeBand(comparisons.toolCalls), false),
+    metricEvidence(comparisons.filesRead, relativeBand(comparisons.filesRead), false),
+  ].filter((value) => value !== undefined);
+  if (evidence.includes("uncertain")) {
+    return { confidence: "low", classification: "inconclusive" };
+  }
+  const helpful = evidence.includes("helpful");
+  const harmful = evidence.includes("harmful");
+  if (helpful && harmful) {
+    return { confidence: "sufficient", classification: "inconclusive" };
+  }
+  if (helpful) return { confidence: "sufficient", classification: "helpful" };
+  if (harmful) return { confidence: "sufficient", classification: "harmful" };
+  return { confidence: "sufficient", classification: "neutral" };
 }
 
 function sectionAblations(
@@ -248,10 +256,6 @@ function sectionAblations(
     const pairedRuns = current.filter((result) =>
       withoutKeys.has(`${result.taskId}:${result.rep}`),
     ).length;
-    const confidence =
-      Math.min(current.length, withoutSection.length, pairedRuns) >= CONFIDENT_RUNS
-        ? "sufficient"
-        : "low";
     const metrics = {
       passRate,
       mistakes,
@@ -262,6 +266,10 @@ function sectionAblations(
       toolCalls,
       filesRead,
     };
+    const classification = classifyAblation(
+      Math.min(current.length, withoutSection.length, pairedRuns) >= CONFIDENT_RUNS,
+      metrics,
+    );
     comparisons.push({
       variant: variant.id,
       file: variant.section.file,
@@ -273,8 +281,7 @@ function sectionAblations(
       currentRuns: current.length,
       ablatedRuns: withoutSection.length,
       pairedRuns,
-      confidence,
-      classification: classifyAblation(confidence, metrics),
+      ...classification,
     });
   }
   return comparisons;

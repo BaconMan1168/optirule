@@ -112,9 +112,51 @@ describe("analyze", () => {
     expect(a.ablation!.sections[0]!.classification).toBe("harmful");
   });
 
+  it("classifies conflicting confident signals as inconclusive", () => {
+    const results = [
+      ...runs("current", 6, { passed: true, tokens: 2000 }),
+      ...runs("ablate-conflict", 6, { passed: false, tokens: 1000 }),
+    ];
+    const a = analyze(
+      results,
+      [{ title: "Conflict", tokens: 500 }],
+      6,
+      [ablateVariant("ablate-conflict", "Conflict", 500)],
+      [],
+      ablationMetadata,
+    );
+    expect(a.ablation!.sections[0]).toMatchObject({
+      confidence: "sufficient",
+      classification: "inconclusive",
+    });
+  });
+
   it("keeps too-few-run sections inconclusive rather than neutral", () => {
     const results = [...runs("current", 1, { tokens: 1000 }), ...runs("ablate-x", 1, { tokens: 5000 })];
     const a = analyze(results, [{ title: "X", tokens: 500 }], 1, [ablateVariant("ablate-x", "X", 500)], [], ablationMetadata);
+    expect(a.ablation!.sections[0]).toMatchObject({
+      confidence: "low",
+      classification: "inconclusive",
+    });
+  });
+
+  it("keeps wide confidence intervals inconclusive rather than neutral", () => {
+    const current = runs("current", 6).map((result, index) => ({
+      ...result,
+      passed: index % 2 === 0,
+    }));
+    const without = runs("ablate-wide", 6).map((result, index) => ({
+      ...result,
+      passed: index % 2 !== 0,
+    }));
+    const a = analyze(
+      [...current, ...without],
+      [{ title: "Wide", tokens: 50 }],
+      1,
+      [ablateVariant("ablate-wide", "Wide", 50)],
+      [],
+      ablationMetadata,
+    );
     expect(a.ablation!.sections[0]).toMatchObject({
       confidence: "low",
       classification: "inconclusive",
