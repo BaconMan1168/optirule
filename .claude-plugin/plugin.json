@@ -1,7 +1,7 @@
 {
   "name": "optirule",
   "description": "Benchmarks repository instruction files against real, test-backed coding tasks.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": {
     "name": "Daniel Guirao"
   },

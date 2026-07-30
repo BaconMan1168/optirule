@@ -9,7 +9,7 @@
       "name": "optirule",
       "source": ".",
       "description": "Empirically evaluates CLAUDE.md and other repository instruction files.",
-      "version": "0.3.0"
+      "version": "0.3.1"
     }
   ]
 }
