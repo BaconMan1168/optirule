@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,8 @@ import { buildTestPatch } from "../src/testfiles.js";
 import type { AgentAdapter } from "../src/adapters.js";
 import type { OptiruleConfig } from "../src/config.js";
 import type { Task } from "../src/types.js";
+import { planVariants } from "../src/variants.js";
+import { parseSections } from "../src/sections.js";
 
 function git(dir: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd: dir, stdio: "pipe" }).toString().trim();
@@ -105,6 +107,85 @@ describe("runAll measurement flow", () => {
       expect(fixed).toMatchObject([{ passed: true, filesChanged: ["value.txt"] }]);
     } finally {
       rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("starts every ablation repetition in a fresh process, snapshot, and Claude session", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "optirule-runner-isolation-"));
+    const processLogDir = mkdtempSync(join(tmpdir(), "optirule-process-log-"));
+    const processLog = join(processLogDir, "runs.jsonl");
+    try {
+      git(repo, "init", "-q");
+      git(repo, "config", "user.email", "t@t.co");
+      git(repo, "config", "user.name", "t");
+      const instructions = "## First\nDo one.\n## Second\nDo two.\n";
+      writeFileSync(join(repo, "CLAUDE.md"), instructions);
+      writeFileSync(join(repo, "value.txt"), "ok\n");
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "-m", "fixture");
+
+      const task: Task = {
+        id: "isolation",
+        prompt: "record this process",
+        startRef: "HEAD",
+        successCommand: `${JSON.stringify(process.execPath)} -e "process.exit(0)"`,
+        testFiles: [],
+        source: "manual",
+      };
+      const config: OptiruleConfig = {
+        agent: "test",
+        agent_args: [],
+        instruction_files: ["CLAUDE.md"],
+        test_command: task.successCommand,
+        max_tasks: 1,
+        reps: 2,
+        tasks: [],
+      };
+      const script = `
+        require("node:fs").appendFileSync(
+          ${JSON.stringify(processLog)},
+          JSON.stringify({
+            pid: process.pid,
+            cwd: process.cwd(),
+            session: process.env.CLAUDE_CODE_TMPDIR
+          }) + "\\n"
+        );
+      `;
+      const adapter: AgentAdapter = {
+        name: "test",
+        instructionFiles: ["CLAUDE.md"],
+        buildCommand: () => ({
+          command: process.execPath,
+          args: ["-e", script],
+          isolateClaudeSession: true,
+        }),
+        buildJudgeCommand: () => {
+          throw new Error("unused");
+        },
+        extractText: (stdout) => stdout,
+        parseTokenUsage: () => undefined,
+      };
+      const variants = planVariants(parseSections(instructions, "CLAUDE.md"), true);
+
+      const results = await runAll(repo, config, adapter, [task], variants);
+      const processes = readFileSync(processLog, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { pid: number; cwd: string; session: string });
+
+      expect(results).toHaveLength(variants.length * config.reps);
+      expect(processes).toHaveLength(variants.length * config.reps);
+      expect(new Set(processes.map((process) => process.pid)).size).toBe(processes.length);
+      expect(new Set(processes.map((process) => process.cwd)).size).toBe(processes.length);
+      expect(new Set(processes.map((process) => process.session)).size).toBe(processes.length);
+      expect(processes.every((process) => !existsSync(process.cwd))).toBe(true);
+      expect(processes.every((process) => !existsSync(process.session))).toBe(true);
+      expect(
+        results.filter((result) => result.variant.startsWith("ablate-")),
+      ).toHaveLength(4);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(processLogDir, { recursive: true, force: true });
     }
   });
 });

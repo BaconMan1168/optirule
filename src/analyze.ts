@@ -234,6 +234,9 @@ function sectionAblations(
   for (const variant of ablated) {
     if (variant.kind !== "ablate") continue;
     const withoutSection = results.filter((result) => result.variant === variant.id);
+    const withoutKeys = new Set(
+      withoutSection.map((result) => `${result.taskId}:${result.rep}`),
+    );
     const passRate = compareMetric(current, withoutSection, (result) => Number(result.passed));
     const mistakes = compareMetric(current, withoutSection, violations);
     const compliance = compareMetric(current, withoutSection, complianceRate);
@@ -242,7 +245,9 @@ function sectionAblations(
     const churn = compareMetric(current, withoutSection, (result) => result.churn);
     const toolCalls = compareMetric(current, withoutSection, (result) => result.toolCalls);
     const filesRead = compareMetric(current, withoutSection, (result) => result.filesRead?.length);
-    const pairedRuns = Math.min(current.length, withoutSection.length);
+    const pairedRuns = current.filter((result) =>
+      withoutKeys.has(`${result.taskId}:${result.rep}`),
+    ).length;
     const confidence =
       Math.min(current.length, withoutSection.length, pairedRuns) >= CONFIDENT_RUNS
         ? "sufficient"

@@ -17,6 +17,9 @@ const CLAUDE_SESSION_VARIABLES = [
   "CLAUDE_CODE_ENTRYPOINT",
   "CLAUDE_CODE_SESSION_ID",
   "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE",
+  "CLAUDE_PID",
 ] as const;
 
 /** Copy the parent environment without markers that make Claude reject nesting. */

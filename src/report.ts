@@ -7,6 +7,7 @@ import type {
   AblationClassification,
   ComplianceAnalysis,
   SectionSignal,
+  MetricComparison,
 } from "./analyze.js";
 import { REPORT_PATH, ANALYSIS_PATH } from "./constants.js";
 
@@ -111,6 +112,19 @@ function delta(value: number | undefined, format: "rate" | "number" | "duration"
   return `${sign}${value.toFixed(1)}`;
 }
 
+function metricCell(
+  metric: MetricComparison,
+  format: "rate" | "number" | "duration" = "number",
+): string {
+  if (metric.change === undefined) return "—";
+  const value = (number: number) => {
+    if (format === "rate") return pct(number);
+    if (format === "duration") return `${(number / 1000).toFixed(1)}s`;
+    return number.toFixed(1);
+  };
+  return `${delta(metric.change, format)} <span class="muted">(${value(metric.current!)} / ${value(metric.ablated!)})</span>`;
+}
+
 function ablationRow(section: SectionAblation): string {
   const cls =
     section.classification === "helpful"
@@ -122,14 +136,14 @@ function ablationRow(section: SectionAblation): string {
     <td>${esc(section.title)}</td>
     <td class="${cls}">${ABLATION_LABELS[section.classification]}</td>
     <td>${section.confidence === "sufficient" ? "Sufficient" : "Low"} <span class="muted">(${section.pairedRuns} pairs; ${section.currentRuns}/${section.ablatedRuns} runs)</span></td>
-    <td>${delta(section.passRate.change, "rate")}</td>
-    <td>${delta(section.mistakes.change)}</td>
-    <td>${delta(section.compliance.change, "rate")}</td>
-    <td>${delta(section.tokens.change)}</td>
-    <td>${delta(section.runtimeMs.change, "duration")}</td>
-    <td>${delta(section.churn.change)}</td>
-    <td>${delta(section.toolCalls.change)}</td>
-    <td>${delta(section.filesRead.change)}</td>
+    <td>${metricCell(section.passRate, "rate")}</td>
+    <td>${metricCell(section.mistakes)}</td>
+    <td>${metricCell(section.compliance, "rate")}</td>
+    <td>${metricCell(section.tokens)}</td>
+    <td>${metricCell(section.runtimeMs, "duration")}</td>
+    <td>${metricCell(section.churn)}</td>
+    <td>${metricCell(section.toolCalls)}</td>
+    <td>${metricCell(section.filesRead)}</td>
     <td>${section.staticTokensRemoved.toLocaleString()}</td>
   </tr>`;
 }
@@ -137,7 +151,7 @@ function ablationRow(section: SectionAblation): string {
 function ablationSection(sections: SectionAblation[]): string {
   return `
 <h2>Section ablation (current vs leave-one-section-out)</h2>
-<p class="muted">Every delta is <code>current − ablated</code>. Positive is favorable for pass rate and compliance; negative is favorable for mistakes and cost metrics. Neutral means sufficiently powered measurements stayed within practical-equivalence bands. Inconclusive means low confidence or conflicting signals, not neutrality.</p>
+<p class="muted">Every delta is <code>current − ablated</code>; parentheses show <code>current / ablated</code>. Positive is favorable for pass rate and compliance; negative is favorable for mistakes and cost metrics. Neutral means sufficiently powered measurements stayed within practical-equivalence bands. Inconclusive means low confidence or conflicting signals, not neutrality.</p>
 <table>
   <thead><tr><th>Section</th><th>Classification</th><th>Confidence / runs</th><th>Pass Δ</th><th>Mistakes Δ</th><th>Compliance Δ</th><th>Tokens Δ</th><th>Runtime Δ</th><th>Churn Δ</th><th>Tools Δ</th><th>Reads Δ</th><th>Static removed</th></tr></thead>
   <tbody>${sections.map(ablationRow).join("")}</tbody>

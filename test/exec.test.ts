@@ -7,6 +7,9 @@ const SESSION_VARIABLES = [
   "CLAUDE_CODE_ENTRYPOINT",
   "CLAUDE_CODE_SESSION_ID",
   "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE",
+  "CLAUDE_PID",
 ] as const;
 
 const originalEnvironment = new Map<string, string | undefined>();
@@ -46,8 +49,23 @@ describe("runSpec", () => {
       markers: (string | null)[];
       tempDir: string;
     };
-    expect(output.markers).toEqual([null, null, null, null]);
+    expect(output.markers).toEqual(SESSION_VARIABLES.map(() => null));
     expect(output.tempDir).toContain("optirule-claude-");
     expect(existsSync(output.tempDir)).toBe(false);
+  });
+
+  it("gives every Claude invocation a distinct private session directory", async () => {
+    const script = "console.log(process.env.CLAUDE_CODE_TMPDIR)";
+    const spec = {
+      command: process.execPath,
+      args: ["-e", script],
+      isolateClaudeSession: true,
+    };
+    const first = await runSpec(spec, process.cwd());
+    const second = await runSpec(spec, process.cwd());
+
+    expect(first.stdout).not.toBe(second.stdout);
+    expect(existsSync(first.stdout)).toBe(false);
+    expect(existsSync(second.stdout)).toBe(false);
   });
 });
