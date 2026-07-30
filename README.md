@@ -23,13 +23,17 @@ tokens and runtime.
 From the root of a git repository that already has an instruction file:
 
 ```bash
-npx optirule@latest init   # detect instruction files and agent, scaffold optirule.yml
+npx optirule@latest init   # choose detected instruction files, scaffold optirule.yml
 npx optirule@latest lint   # turn the written rules into a reviewable scoring rubric
 ```
 
 `init` and `lint` are cheap: `init` spends nothing and `lint` is a single model
 call. Review the generated `optirule.rubric.yml` — it is the scoring contract —
 then benchmark.
+
+When more than one context file is present, `init` shows the detected files as
+a checklist. Press Enter to include all of them, or enter the numbers for only
+the files you want written to `instruction_files` in `optirule.yml`.
 
 Plan the configured benchmark before spending anything:
 
@@ -286,8 +290,9 @@ output; the CLI must be on your `PATH`):
 | `gemini` | Gemini CLI | `GEMINI.md` |
 | `aider` | aider | `CONVENTIONS.md` |
 
-`optirule init` autodetects which of these CLIs are on your `PATH` and picks one
-— preferring the runner it's invoked from, then a CLI whose default instruction
+`optirule init` lets you choose from the context files it detects, then
+autodetects which of these CLIs are on your `PATH` and picks one — preferring
+the runner it's invoked from, then a CLI whose default selected instruction
 file is present — instead of always assuming `claude`.
 
 Anything else via a generic command template (no token or files-read parsing):

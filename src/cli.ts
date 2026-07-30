@@ -13,7 +13,7 @@ program
 
 program
   .command("init")
-  .description("Detect instruction files and scaffold optirule.yml")
+  .description("Select detected instruction files and scaffold optirule.yml")
   .action(async () => {
     await runInit(process.cwd());
   });
