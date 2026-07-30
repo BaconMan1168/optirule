@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-29
+
+### Added
+
+- Add complete leave-one-section-out metrics for pass rate, mistakes,
+  compliance, tokens, runtime, churn, tool calls, files read, static tokens,
+  run counts, paired confidence intervals, and section classification.
+- Add the dedicated `/optirule:ablate` Claude Code skill with configuration-led
+  planning, explicit cost approval, plan-fingerprint verification, section
+  summary, and optional compact export.
+- Add `CLAUDE.compact.md` export backed only by a valid, unchanged ablation run.
+  Every removal is explained and the original instruction file is never
+  overwritten.
+- Add fake-agent end-to-end ablation coverage and regression tests for fresh
+  processes, fresh snapshots, distinct Claude sessions, exact planned variants,
+  and parent-context isolation.
+
+### Changed
+
+- Bump `.optirule/analysis.json` to `schemaVersion: 2` and include the complete
+  section table in both JSON and HTML.
+- Classify sections as helpful, harmful, neutral, or inconclusive. Neutral now
+  requires sufficient runs and is distinct from insufficient evidence.
+- Make `max_tasks` and `reps` from `optirule.yml` authoritative in both skills;
+  the two-task, one-repetition scope is now an explicit cheap-trial option.
+- Keep `/optirule:audit` focused on normal baseline-versus-current evaluation.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added
@@ -64,7 +91,8 @@ Initial release.
   `no-new-env-vars`, and `judge`.
 - Self-contained HTML report at `.optirule/report.html`.
 
-[Unreleased]: https://github.com/BaconMan1168/optirule/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/BaconMan1168/optirule/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/BaconMan1168/optirule/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/BaconMan1168/optirule/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/BaconMan1168/optirule/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/BaconMan1168/optirule/releases/tag/v0.1.0

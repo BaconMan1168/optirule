@@ -31,18 +31,18 @@ npx optirule@latest lint   # turn the written rules into a reviewable scoring ru
 call. Review the generated `optirule.rubric.yml` — it is the scoring contract —
 then benchmark.
 
-**Start small.** A first run is worth scoping down to two tasks and one rep, so
-you can see a real report before committing to a full benchmark:
+Plan the configured benchmark before spending anything:
 
 ```bash
-npx optirule@latest run --max-tasks 2 --reps 1 --plan # inspect cost, spend nothing
-npx optirule@latest run --max-tasks 2 --reps 1        # 4 agent invocations
+npx optirule@latest run --plan # uses max_tasks and reps from optirule.yml
+npx optirule@latest run
 ```
 
-Then run the full benchmark once you know the output is useful to you:
+For an explicitly cheaper but noisier trial, override both values:
 
 ```bash
-npx optirule@latest run                          # defaults to 90 invocations
+npx optirule@latest run --max-tasks 2 --reps 1 --plan
+npx optirule@latest run --max-tasks 2 --reps 1
 ```
 
 `run` compares no instructions with your current instructions and writes a
@@ -60,7 +60,7 @@ slash command:
 /optirule:audit setup
 ```
 
-The skill supports `setup`, `lint`, `plan`, `run`, `report`, and `export`:
+`/optirule:audit` handles normal baseline-versus-current evaluation:
 
 ```text
 /optirule:audit lint
@@ -69,10 +69,59 @@ The skill supports `setup`, `lint`, `plan`, `run`, `report`, and `export`:
 /optirule:audit report
 ```
 
-It is deliberately user-invoked rather than automatic. Before a benchmark it
-runs the no-spend plan, reports the exact agent and judge invocation counts,
-and waits for explicit approval. The skill never overwrites the original
-instruction file.
+`/optirule:ablate` is the dedicated section-level workflow:
+
+```text
+/optirule:ablate
+```
+
+Both skills are deliberately user-invoked. They read `max_tasks` and `reps`
+from `optirule.yml`, run a no-spend plan, report exact agent and judge invocation
+counts, and wait for explicit approval. A two-task, one-repetition trial is
+offered only as an explicit cheaper option.
+
+### Complete `/optirule:ablate` example
+
+Suppose `optirule.yml` specifies five tasks and three repetitions, and
+`CLAUDE.md` has four sections:
+
+```text
+You: /optirule:ablate
+
+Claude: Configuration: max_tasks=5, reps=3, agent=claude, file=CLAUDE.md.
+        I’ll plan 2 fixed variants + 4 leave-one-section-out variants.
+
+Claude runs: optirule run --ablate --plan
+
+OptiRule: Planned run: 5 tasks x 6 variants x 3 reps = 90 agent invocations.
+          Instruction files add ~75,000 static tokens across the plan.
+          Rubric judge rules add 0 calls.
+          Plan fingerprint: 7b4e2a1c9d83f650
+
+Claude: This plan costs 90 full agent runs. Proceed?
+You: Proceed.
+
+Claude runs the identical plan with its internal approval flag, verifies the
+same fingerprint, then summarizes every section:
+
+Section       Class         Confidence  Runs      Pass  Mistakes  Compliance  Tokens  Runtime  Churn  Tools  Reads  Static
+Testing       Helpful      Sufficient  15/15/15  +20pp  -0.4      +18pp       -320    -4.1s    -12    -3     -2     340
+Formatting    Neutral      Sufficient  15/15/15    0pp   0.0        0pp         +8    +0.2s      0     0      0     110
+Deployment    Inconclusive Low          3/3/3      0pp   0.0         —           —       —        0     —      —     205
+Legacy notes  Harmful      Sufficient  15/15/15    0pp  +0.2       -6pp       +410    +7.8s    +18    +4     +3     480
+
+Claude: Neutral means sufficiently powered practical equivalence.
+        Inconclusive means insufficient or conflicting evidence.
+        Create CLAUDE.compact.md?
+You: Yes.
+
+Claude runs: optirule export --compact
+Claude: Removed Formatting (neutral) and Legacy notes (harmful), explained each
+        measured delta, and left CLAUDE.md unchanged.
+```
+
+Every execution fingerprint must match its approved plan. The internal approval
+flag is handled by the skills; users do not need to type or understand it.
 
 ### What a run costs
 
@@ -84,12 +133,13 @@ spend. The count is `tasks × variants × reps`:
 | `run --max-tasks 2 --reps 1` | 2 | 2 | 1 | **4** |
 | `run --max-tasks 5` | 5 | 2 | 3 | **30** |
 | `run` (defaults) | 15 | 2 | 3 | **90** |
-| `run --ablate` | 15 | 2 + one per section | 3 | **90 and up** |
+| `run --ablate` | 15 | 2 + one per section | 3 | **45 × (2 + sections)** |
 
 Fewer reps is cheaper and noisier — agents are non-deterministic, so the default
 of 3 exists for a reason and the report flags results too thin to trust. Optirule
 always prints the planned invocation count and instruction token cost and waits
-for confirmation before spending anything (`--yes` skips the prompt).
+for confirmation before spending anything. Guided skills reuse the approved
+saved plan with an internal flag.
 
 For repeated use, install the CLI globally:
 
@@ -102,7 +152,7 @@ Additional analysis and export commands:
 ```bash
 optirule run --ablate       # measure each section with leave-one-out runs
 optirule run --ablate-files # remove each whole instruction file in turn
-optirule export --minimal   # keep only sections supported by the last run
+optirule export --compact   # write ablation-backed <file>.compact.md copies
 ```
 
 ## What you learn
@@ -163,14 +213,23 @@ current rule violations, paired by task with a reproducible 95% interval. It
 keeps compliance separate from quality (test pass/fail) and reports tokens,
 runtime, churn, tool calls, and files touched/read as cost and effort.
 
-Every section receives one of five evidence labels: **earns its keep** (helped on
-at least two tasks), **one task only**, **redundant**, **never exercised**, or
-**harmful**. `export --minimal` removes only redundant or harmful sections. A
-never-exercised guardrail is unproven, not useless, so it is never dropped.
+The baseline-vs-current compliance view still labels rule sections as
+**earns its keep**, **one task only**, **redundant**, **never exercised**, or
+**harmful**. A never-exercised guardrail is unproven, not useless.
 
-`--ablate` still adds a leave-one-section-out sweep for interaction and token
-effects. `--ablate-files` does the same for each whole instruction file. Both
-increase the invocation count shown before confirmation.
+`--ablate` adds a complete leave-one-section-out comparison. For each section,
+the report includes current and ablated values, their change, paired confidence,
+pass rate, mistakes, compliance, tokens, runtime, churn, tool calls, files read,
+static tokens removed, and run counts. It classifies the section as **helpful**,
+**harmful**, **neutral**, or **inconclusive**. Neutral requires sufficient runs;
+low-confidence or conflicting evidence is inconclusive.
+
+`export --compact` requires a valid ablation run and refuses stale evidence if
+an instruction file changed afterward. It removes only confidently neutral or
+harmful sections, explains each removal, preserves helpful and inconclusive
+sections, and writes `CLAUDE.compact.md` (or the corresponding name for another
+instruction file) without touching the original. `--ablate-files` separately
+removes each whole instruction file in turn.
 
 Tasks come from two sources, manual entries first:
 
@@ -182,7 +241,8 @@ Tasks come from two sources, manual entries first:
   parent — neither can distinguish a working agent from an idle one.
 
 Before spending money, `run` prints the planned invocation count and instruction
-token cost and asks to proceed (`--yes` skips the prompt).
+token cost and asks to proceed. The Claude skills separately plan, request
+conversational approval, and then execute only the matching fingerprint.
 
 ### Reports and automation
 
@@ -190,9 +250,12 @@ Every completed run writes:
 
 - `.optirule/report.html` — a self-contained human-readable report.
 - `.optirule/analysis.json` — the same analysis as machine-readable JSON.
+- `.optirule/run-plan.json` — the last no-spend plan and its fingerprint.
 
-The JSON includes `schemaVersion: 1` so skills and other local automation can
-detect future format changes instead of silently misreading a report.
+The analysis JSON includes `schemaVersion: 2`. Ablation runs add the full
+per-section metric table, classifications, confidence, plan fingerprint, and
+instruction-file hashes so skills and local automation can validate evidence
+before acting on it.
 
 ## optirule.yml
 
@@ -282,10 +345,11 @@ Optirule creates temporary, history-free repository snapshots and deletes them
 after the run. Reports stay local unless you choose to share them.
 
 Claude Code benchmark subprocesses do not inherit the invoking Claude session's
-identity. Each subprocess gets a private temporary directory, ignores ambient
-MCP servers, and disables session persistence. This lets the
-`/optirule:audit` skill start isolated benchmark agents without polluting the
-parent session or the session picker.
+identity, child-session markers, parent PID, or force-persistence setting. Each
+subprocess gets a private temporary directory, ignores ambient MCP servers, and
+disables session persistence. This lets `/optirule:audit` and
+`/optirule:ablate` start isolated benchmark agents without polluting the parent
+session or the session picker.
 
 The coding-agent CLI and success commands still run with your user account's
 environment and whatever network access those tools normally have. Optirule is
