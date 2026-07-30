@@ -22,7 +22,7 @@ describe("Claude Code plugin", () => {
     });
   });
 
-  it("ships a complete, user-invoked audit skill with cost gating", () => {
+  it("keeps audit focused on configured baseline-vs-current evaluation", () => {
     const content = readFileSync("skills/audit/SKILL.md", "utf8");
     const frontmatter = /^---\n([\s\S]*?)\n---/.exec(content);
     expect(frontmatter).not.toBeNull();
@@ -33,8 +33,35 @@ describe("Claude Code plugin", () => {
       "disable-model-invocation": true,
     });
     expect(metadata.description).toEqual(expect.stringContaining("CLAUDE.md"));
-    expect(content).toContain("run --max-tasks 2 --reps 1 --plan");
-    expect(content).toContain("without `--plan` and with `--yes`");
+    expect(content).toContain("optirule run --plan");
+    expect(content).toContain("Read `max_tasks` and `reps` from `optirule.yml`");
+    expect(content).toContain("explicit cheap-trial option");
+    expect(content).toContain("internal `--yes` flag");
+    expect(content).not.toContain("optirule run --ablate");
+    expect(content).not.toContain("## export");
+    expect(content).not.toContain("TODO");
+  });
+
+  it("ships a dedicated, approval-gated ablation skill", () => {
+    const content = readFileSync("skills/ablate/SKILL.md", "utf8");
+    const frontmatter = /^---\n([\s\S]*?)\n---/.exec(content);
+    expect(frontmatter).not.toBeNull();
+    const metadata = parse(frontmatter![1]!) as Record<string, unknown>;
+
+    expect(metadata).toMatchObject({
+      name: "ablate",
+      "disable-model-invocation": true,
+    });
+    expect(metadata.description).toEqual(expect.stringContaining("leave-one-section-out"));
+    expect(content).toContain("optirule run --ablate --plan");
+    expect(content).toContain("max_tasks");
+    expect(content).toContain("reps");
+    expect(content).toContain("--max-tasks 2 --reps 1");
+    expect(content).toContain("internal `--yes`");
+    expect(content).toContain("optirule export --compact");
+    expect(content).toContain("schemaVersion: 2");
+    expect(content).toContain("neutral");
+    expect(content).toContain("inconclusive");
     expect(content).not.toContain("TODO");
   });
 });

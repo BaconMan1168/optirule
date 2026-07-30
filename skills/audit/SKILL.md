@@ -1,8 +1,8 @@
 ---
 name: audit
-description: Benchmark CLAUDE.md and other repository instruction files against real, test-backed coding tasks. Use when the user wants to measure whether coding-agent rules improve task success or compliance, inspect their token and runtime cost, identify harmful or redundant sections, or create an evidence-backed minimal instruction file.
+description: Benchmark CLAUDE.md and other repository instruction files against real, test-backed coding tasks. Use when the user wants a normal baseline-versus-current audit of task success, compliance, token cost, runtime, churn, tool calls, or files read. Use /optirule:ablate for section-level removal evidence and compact export.
 disable-model-invocation: true
-argument-hint: "[setup|lint|plan|run|report|export]"
+argument-hint: "[setup|lint|plan|run|report]"
 ---
 
 # Audit repository instructions with OptiRule
@@ -13,7 +13,7 @@ without starting a model call.
 
 ## Resolve the CLI
 
-Prefer an installed `optirule` command at version 0.2.0 or newer. Otherwise,
+Prefer an installed `optirule` command at version 0.3.0 or newer. Otherwise,
 explain that `npx --yes optirule@latest` downloads the current npm package and
 obtain permission before using it. Reuse the chosen command for the whole workflow.
 
@@ -21,14 +21,12 @@ obtain permission before using it. Reuse the chosen command for the whole workfl
 
 - Never use `--yes` until the user has approved the exact plan printed by
   `optirule run --plan`.
-- Start with `--max-tasks 2 --reps 1` unless the user explicitly requests a
-  different scope.
-- Do not treat a small trial as conclusive. Repeat the report's low-confidence
-  warning.
+- Read `max_tasks` and `reps` from `optirule.yml` and use them by default.
+- Offer `--max-tasks 2 --reps 1` only as an explicit cheap-trial option. Never
+  apply it unless the user chooses the cheaper, noisier trial.
 - Review `optirule.rubric.yml` before benchmarking. It is the scoring contract.
-- Never overwrite an original instruction file. `export --minimal` writes a
-  separate candidate.
 - Do not commit generated configuration, reports, or exports unless asked.
+- Never add `--ablate` or `--ablate-files`; this skill is baseline vs current.
 
 ## setup
 
@@ -55,21 +53,25 @@ Explain that linting uses one read-only model call per instruction file, then:
 
 ## plan
 
-Run:
+Read `optirule.yml`, report its configured `max_tasks` and `reps`, then run:
 
 ```bash
-optirule run --max-tasks 2 --reps 1 --plan
+optirule run --plan
 ```
 
 Report the measurable task count, variants, repetitions, agent invocations,
-judge calls, and instruction-token cost exactly as printed. Do not start the
-benchmark.
+judge calls, instruction-token cost, and plan fingerprint exactly as printed.
+Do not start the benchmark. If the user explicitly selected a cheap trial, add
+`--max-tasks 2 --reps 1` to this command and label its evidence low-confidence.
 
 ## run
 
 Run the `plan` phase first in the same conversation. After the user explicitly
-approves that plan, run the identical command without `--plan` and with `--yes`.
-Do not silently change task count, repetitions, ablation flags, agent, or model.
+approves that plan, run the identical visible options without `--plan`; add the
+internal `--yes` flag so the already-approved cost is not prompted twice. Verify
+that the execution prints the same plan fingerprint. Users should never be
+asked to type or understand `--yes`. Do not silently change task count,
+repetitions, agent, or model.
 
 After completion, report the paths written under `.optirule/`.
 
@@ -81,18 +83,7 @@ Read `.optirule/analysis.json` and summarize:
 - Mistakes avoided and rule-compliance changes
 - Token, runtime, churn, tool-call, and files-read differences
 - Confidence limitations
-- Section evidence labels and any ablation results
+- Whole-file recommendation and baseline-vs-current section compliance
 
 Separate measured observations from recommendations. Never describe
 `never-exercised` as useless.
-
-## export
-
-Require a completed compliance run, then run:
-
-```bash
-optirule export --minimal
-```
-
-Compare the generated candidate with the original instruction file. Explain
-every removed section and preserve the original unchanged.
