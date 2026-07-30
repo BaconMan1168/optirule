@@ -9,7 +9,7 @@ const program = new Command();
 program
   .name("optirule")
   .description("A/B test your coding-agent instruction files against real tasks from your repo.")
-  .version("0.3.0");
+  .version("0.3.2");
 
 program
   .command("init")

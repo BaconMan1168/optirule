@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-29
+
 ### Added
 
 - Let users choose which detected context files `optirule init` writes to
   `instruction_files`, with all detected files selected by default.
+
+### Fixed
+
+- Report the correct version from `optirule --version`. The string was hardcoded
+  in the CLI and was missed by the 0.3.1 release, so 0.3.1 reported `0.3.0`.
 
 ## [0.3.0] - 2026-07-29
 
