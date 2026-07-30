@@ -13,7 +13,7 @@ without starting a model call.
 
 ## Resolve the CLI
 
-Prefer an installed `optirule` command at version 0.3.0 or newer. Otherwise,
+Prefer an installed `optirule` command at version 0.3.2 or newer. Otherwise,
 explain that `npx --yes optirule@latest` downloads the current npm package and
 obtain permission before using it. Reuse the chosen command for the whole workflow.
 
@@ -33,9 +33,14 @@ obtain permission before using it. Reuse the chosen command for the whole workfl
 1. Confirm the working directory is a Git repository.
 2. Confirm Node.js 22.12 or newer and the configured coding-agent CLI are
    available.
-3. Locate at least one supported instruction file.
-4. Run `optirule init`.
-5. Read `optirule.yml`.
+3. Locate at least one supported instruction file. Ask which of them the user
+   wants benchmarked whenever more than one is detected; generated or
+   tool-managed files are rarely worth measuring.
+4. Run `optirule init --files <comma-separated files>`. You have no terminal, so
+   the interactive prompt cannot be answered and a bare `optirule init` would
+   keep every detected file.
+5. Read `optirule.yml` and confirm `instruction_files` matches what the user
+   chose.
 6. Verify `test_command` against the repository's actual test configuration.
    If the correct command is ambiguous, ask instead of guessing.
 

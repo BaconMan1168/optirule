@@ -12,7 +12,7 @@ workflow; use `/optirule:audit` for a normal baseline-versus-current evaluation.
 
 ## Resolve the CLI
 
-Prefer an installed `optirule` command at version 0.3.0 or newer. Otherwise,
+Prefer an installed `optirule` command at version 0.3.2 or newer. Otherwise,
 explain that `npx --yes optirule@latest` downloads the current npm package and
 obtain permission before using it. Reuse the chosen command for the whole
 workflow.

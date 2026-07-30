@@ -35,6 +35,14 @@ When more than one context file is present, `init` shows the detected files as
 a checklist. Press Enter to include all of them, or enter the numbers for only
 the files you want written to `instruction_files` in `optirule.yml`.
 
+Outside a terminal — in CI, or when a coding agent runs the command — there is
+nobody to answer that prompt, so `init` keeps every detected file. Name the ones
+you want instead:
+
+```bash
+optirule init --files CLAUDE.md
+```
+
 Plan the configured benchmark before spending anything:
 
 ```bash

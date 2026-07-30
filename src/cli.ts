@@ -3,6 +3,7 @@ import { runInit } from "./commands/init.js";
 import { runBenchmark } from "./commands/run.js";
 import { runExport } from "./commands/export.js";
 import { runLint } from "./commands/lint.js";
+import { resolveFileSelection } from "./prompt.js";
 
 const program = new Command();
 
@@ -14,8 +15,23 @@ program
 program
   .command("init")
   .description("Select detected instruction files and scaffold optirule.yml")
-  .action(async () => {
-    await runInit(process.cwd());
+  .option(
+    "--files <names>",
+    "comma-separated instruction files to use, skipping the interactive prompt",
+  )
+  .action(async (options: { files?: string }) => {
+    const requested = options.files;
+    try {
+      await runInit(
+        process.cwd(),
+        requested === undefined
+          ? undefined
+          : async (detected) => resolveFileSelection(detected, requested),
+      );
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    }
   });
 
 program

@@ -17,8 +17,38 @@ export function parseChecklistSelection(files: string[], answer: string): string
   return files.filter((_, index) => selected.has(index));
 }
 
-/** Ask which detected instruction files should be included in the config. */
-export async function selectInstructionFiles(files: string[]): Promise<string[]> {
+/** Resolve a comma-separated `--files` value against the detected files. */
+export function resolveFileSelection(detected: string[], requested: string): string[] {
+  const names = requested
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (names.length === 0) throw new Error("--files needs at least one file name.");
+
+  const unknown = names.filter((name) => !detected.includes(name));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Not detected: ${unknown.join(", ")}. Detected files: ${detected.join(", ")}.`,
+    );
+  }
+  return detected.filter((file) => names.includes(file));
+}
+
+/**
+ * Ask which detected instruction files should be included in the config.
+ * Without a terminal there is nobody to answer, so keep every detected file
+ * rather than blocking on input that will never arrive.
+ */
+export async function selectInstructionFiles(
+  files: string[],
+  interactive: boolean = process.stdin.isTTY === true,
+): Promise<string[]> {
+  if (!interactive) {
+    console.log(`No terminal input — keeping all detected files: ${files.join(", ")}.`);
+    console.log("Pass --files to choose a subset without a terminal.");
+    return files;
+  }
+
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     console.log("\nSelect the instruction files to include:");

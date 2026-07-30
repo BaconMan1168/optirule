@@ -13,11 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Let users choose which detected context files `optirule init` writes to
   `instruction_files`, with all detected files selected by default.
+- Add `optirule init --files` to choose those files without the interactive
+  prompt, so agents and CI can select a subset.
 
 ### Fixed
 
+- Write `optirule.yml` when `optirule init` runs without a terminal. The
+  selection prompt introduced in 0.3.1 waited for input that never arrived, so
+  non-interactive runs exited successfully having written nothing.
 - Report the correct version from `optirule --version`. The string was hardcoded
   in the CLI and was missed by the 0.3.1 release, so 0.3.1 reported `0.3.0`.
+
+## [0.3.1] - 2026-07-29
+
+Superseded by 0.3.2. Do not use: `optirule init` writes no configuration unless
+it is run from an interactive terminal, and `--version` misreports `0.3.0`.
 
 ## [0.3.0] - 2026-07-29
 
@@ -103,7 +113,9 @@ Initial release.
   `no-new-env-vars`, and `judge`.
 - Self-contained HTML report at `.optirule/report.html`.
 
-[Unreleased]: https://github.com/BaconMan1168/optirule/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/BaconMan1168/optirule/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/BaconMan1168/optirule/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/BaconMan1168/optirule/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/BaconMan1168/optirule/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/BaconMan1168/optirule/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/BaconMan1168/optirule/compare/v0.1.0...v0.1.1
