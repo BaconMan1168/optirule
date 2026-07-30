@@ -3,8 +3,8 @@ import { dirname } from "node:path";
 import type {
   Analysis,
   VariantSummary,
-  SectionImpact,
-  ImpactSignal,
+  SectionAblation,
+  AblationClassification,
   ComplianceAnalysis,
   SectionSignal,
 } from "./analyze.js";
@@ -96,35 +96,51 @@ function sectionRow(title: string, tokens: number, total: number): string {
   </tr>`;
 }
 
-const SIGNAL_LABELS: Record<ImpactSignal, string> = {
-  "earns-its-keep": "Earns its keep",
-  "no-measurable-impact": "No measurable impact",
-  "actively-hurts": "Actively hurts",
-  "too-small-to-measure": "Too small to measure",
-  "low-confidence": "Low confidence",
+const ABLATION_LABELS: Record<AblationClassification, string> = {
+  helpful: "Helpful",
+  harmful: "Harmful",
+  neutral: "Neutral",
+  inconclusive: "Inconclusive — insufficient or conflicting evidence",
 };
 
-function impactRow(i: SectionImpact): string {
-  const cls = i.signal === "earns-its-keep" ? "good" : i.signal === "actively-hurts" ? "bad" : "muted";
-  const impact =
-    i.tokenImpact === undefined
-      ? "—"
-      : `${i.tokenImpact >= 0 ? "+" : ""}${Math.round(i.tokenImpact).toLocaleString()} tok`;
+function delta(value: number | undefined, format: "rate" | "number" | "duration" = "number"): string {
+  if (value === undefined) return "—";
+  const sign = value > 0 ? "+" : "";
+  if (format === "rate") return `${sign}${(value * 100).toFixed(1)}pp`;
+  if (format === "duration") return `${sign}${(value / 1000).toFixed(1)}s`;
+  return `${sign}${value.toFixed(1)}`;
+}
+
+function ablationRow(section: SectionAblation): string {
+  const cls =
+    section.classification === "helpful"
+      ? "good"
+      : section.classification === "harmful"
+        ? "bad"
+        : "muted";
   return `<tr>
-    <td>${esc(i.title)}</td>
-    <td>${i.staticTokens.toLocaleString()}</td>
-    <td>${impact}</td>
-    <td class="${cls}">${SIGNAL_LABELS[i.signal]}</td>
+    <td>${esc(section.title)}</td>
+    <td class="${cls}">${ABLATION_LABELS[section.classification]}</td>
+    <td>${section.confidence === "sufficient" ? "Sufficient" : "Low"} <span class="muted">(${section.pairedRuns} pairs; ${section.currentRuns}/${section.ablatedRuns} runs)</span></td>
+    <td>${delta(section.passRate.change, "rate")}</td>
+    <td>${delta(section.mistakes.change)}</td>
+    <td>${delta(section.compliance.change, "rate")}</td>
+    <td>${delta(section.tokens.change)}</td>
+    <td>${delta(section.runtimeMs.change, "duration")}</td>
+    <td>${delta(section.churn.change)}</td>
+    <td>${delta(section.toolCalls.change)}</td>
+    <td>${delta(section.filesRead.change)}</td>
+    <td>${section.staticTokensRemoved.toLocaleString()}</td>
   </tr>`;
 }
 
-function impactSection(impacts: SectionImpact[]): string {
+function ablationSection(sections: SectionAblation[]): string {
   return `
-<h2>Section impact (leave-one-out ablation)</h2>
-<p class="muted">Each section was removed in turn; token impact is <code>ablated tokens − current tokens</code>. Positive means the agent burned more tokens without the section (it earns its keep); ~0 means no measurable effect; negative means the section made the agent burn more.</p>
+<h2>Section ablation (current vs leave-one-section-out)</h2>
+<p class="muted">Every delta is <code>current − ablated</code>. Positive is favorable for pass rate and compliance; negative is favorable for mistakes and cost metrics. Neutral means sufficiently powered measurements stayed within practical-equivalence bands. Inconclusive means low confidence or conflicting signals, not neutrality.</p>
 <table>
-  <thead><tr><th>Section</th><th>Static tokens</th><th>Token impact</th><th>Signal</th></tr></thead>
-  <tbody>${impacts.map(impactRow).join("")}</tbody>
+  <thead><tr><th>Section</th><th>Classification</th><th>Confidence / runs</th><th>Pass Δ</th><th>Mistakes Δ</th><th>Compliance Δ</th><th>Tokens Δ</th><th>Runtime Δ</th><th>Churn Δ</th><th>Tools Δ</th><th>Reads Δ</th><th>Static removed</th></tr></thead>
+  <tbody>${sections.map(ablationRow).join("")}</tbody>
 </table>`;
 }
 
@@ -168,10 +184,10 @@ ${renderCompliance(analysis.compliance)}
   <thead><tr><th>Variant</th><th>Pass rate</th><th>Avg tokens</th><th>Tokens / success</th><th>Avg runtime</th><th>Avg files changed</th><th>Avg churn</th><th>Avg tool calls</th><th>Avg files read</th></tr></thead>
   <tbody>${analysis.variants.map(summaryRow).join("")}</tbody>
 </table>
-${analysis.sectionImpacts?.length ? impactSection(analysis.sectionImpacts) : ""}
+${analysis.ablation?.sections.length ? ablationSection(analysis.ablation.sections) : ""}
 
 <h2>Instruction cost by section</h2>
-<p class="muted">Static token cost of each section (~${totalInstructionTokens.toLocaleString()} tokens total, paid on every run).${analysis.sectionImpacts?.length ? "" : " The benefit side is measured above at the whole-file level; per-section impact needs <code>--ablate</code>."}</p>
+<p class="muted">Static token cost of each section (~${totalInstructionTokens.toLocaleString()} tokens total, paid on every run).${analysis.ablation?.sections.length ? "" : " The benefit side is measured above at the whole-file level; per-section impact needs <code>--ablate</code>."}</p>
 <table>
   <thead><tr><th>Section</th><th>Tokens</th><th>Share</th></tr></thead>
   <tbody>${sections.map((s) => sectionRow(s.title, s.tokens, totalInstructionTokens)).join("")}</tbody>

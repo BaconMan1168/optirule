@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderReport, renderCompliance, costPerSuccess } from "../src/report.js";
-import type { Analysis, VariantSummary, SectionImpact, ComplianceAnalysis } from "../src/analyze.js";
+import type { Analysis, VariantSummary, SectionAblation, ComplianceAnalysis } from "../src/analyze.js";
 
 function summary(variant: string, over: Partial<VariantSummary> = {}): VariantSummary {
   return {
@@ -18,7 +18,7 @@ function summary(variant: string, over: Partial<VariantSummary> = {}): VariantSu
 
 function analysis(over: Partial<Analysis> = {}): Analysis {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     variants: [summary("baseline"), summary("current")],
     passRateDeltaPct: 0,
     tokenDeltaPct: -18,
@@ -57,21 +57,78 @@ describe("renderReport", () => {
     expect(html).toMatch(/<td>—<\/td>/);
   });
 
-  it("renders a section-impact row with token impact and signal", () => {
-    const impact: SectionImpact = {
+  it("renders the complete per-section ablation row", () => {
+    const section: SectionAblation = {
+      variant: "ablate-fixing",
       file: "CLAUDE.md",
       title: "Fixing",
-      staticTokens: 300,
-      tokenImpact: 1000,
+      startLine: 2,
+      endLine: 4,
+      passRate: { current: 1, ablated: 0.8, change: 0.2, confidenceInterval: [0.1, 0.3] },
+      mistakes: { current: 0, ablated: 1, change: -1, confidenceInterval: [-1, -1] },
+      compliance: { current: 1, ablated: 0.5, change: 0.5, confidenceInterval: [0.3, 0.7] },
+      tokens: { current: 1000, ablated: 2000, change: -1000, confidenceInterval: [-1200, -800] },
+      runtimeMs: { current: 1000, ablated: 1500, change: -500, confidenceInterval: [-700, -300] },
+      churn: { current: 10, ablated: 12, change: -2, confidenceInterval: [-3, -1] },
+      toolCalls: { current: 4, ablated: 6, change: -2, confidenceInterval: [-3, -1] },
+      filesRead: { current: 2, ablated: 3, change: -1, confidenceInterval: [-2, -1] },
+      staticTokensRemoved: 300,
+      currentRuns: 6,
       ablatedRuns: 6,
-      tokenShare: 0.3,
-      signal: "earns-its-keep",
+      pairedRuns: 6,
+      confidence: "sufficient",
+      classification: "helpful",
     };
-    const html = renderReport(analysis({ sectionImpacts: [impact] }));
+    const html = renderReport(analysis({
+      ablation: {
+        valid: true,
+        planFingerprint: "abc",
+        instructionFileHashes: { "CLAUDE.md": "hash" },
+        sections: [section],
+      },
+    }));
     expect(html).toContain("Fixing");
-    expect(html).toContain("300"); // static cost
-    expect(html).toMatch(/\+1,000/); // token impact
-    expect(html).toContain("Earns its keep");
+    expect(html).toContain("Helpful");
+    expect(html).toContain("6 pairs");
+    expect(html).toContain("+20.0pp");
+    expect(html).toContain("-1.0");
+    expect(html).toContain("300");
+    expect(html).toContain("current − ablated");
+  });
+
+  it("distinguishes neutral from insufficient evidence", () => {
+    const base = {
+      variant: "ablate-x",
+      file: "CLAUDE.md",
+      title: "X",
+      startLine: 0,
+      endLine: 1,
+      passRate: { current: 1, ablated: 1, change: 0, confidenceInterval: [0, 0] },
+      mistakes: { current: 0, ablated: 0, change: 0, confidenceInterval: [0, 0] },
+      compliance: {},
+      tokens: {},
+      runtimeMs: { current: 1, ablated: 1, change: 0, confidenceInterval: [0, 0] },
+      churn: { current: 0, ablated: 0, change: 0, confidenceInterval: [0, 0] },
+      toolCalls: {},
+      filesRead: {},
+      staticTokensRemoved: 10,
+      currentRuns: 5,
+      ablatedRuns: 5,
+      pairedRuns: 5,
+    };
+    const html = renderReport(analysis({
+      ablation: {
+        valid: true,
+        planFingerprint: "abc",
+        instructionFileHashes: { "CLAUDE.md": "hash" },
+        sections: [
+          { ...base, confidence: "sufficient", classification: "neutral" },
+          { ...base, variant: "ablate-y", title: "Y", confidence: "low", classification: "inconclusive" },
+        ],
+      },
+    }));
+    expect(html).toContain("Neutral");
+    expect(html).toContain("Inconclusive — insufficient or conflicting evidence");
   });
 });
 

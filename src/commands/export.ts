@@ -1,83 +1,119 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { loadConfig } from "../config.js";
 import { parseSections, removeSection } from "../sections.js";
 import { readAnalysis } from "../report.js";
-import type { SectionSignal } from "../analyze.js";
+import type { AblationClassification, SectionAblation } from "../analyze.js";
+import { instructionFileHashes } from "../runplan.js";
 
 export interface ExportOptions {
+  compact?: boolean;
+  /** Backward-compatible alias for `compact`. */
   minimal?: boolean;
   out?: string;
 }
 
-/** The verbatim honesty caveat printed with every minimal export. */
+/** The verbatim honesty caveat printed with every compact export. */
 const CAVEAT =
-  "validated only against your optirule task set. Sections kept as never-exercised or " +
-  "single-task-signal were not proven useless — they were never put to the test.";
+  "validated only against your OptiRule task set. Helpful and inconclusive sections were " +
+  "preserved; inconclusive evidence is not evidence of uselessness.";
 
-/** Only demonstrated redundancy or harm is enough evidence to remove a section. */
-export function isDroppable(signal: SectionSignal): boolean {
-  return signal === "redundant" || signal === "harmful";
+/** Only confident neutrality or harm is enough ablation evidence to remove a section. */
+export function isDroppable(classification: AblationClassification): boolean {
+  return classification === "neutral" || classification === "harmful";
 }
 
-/** Default output path for a file: `CLAUDE.md` → `CLAUDE.optirule.md`. */
+/** Default output path for a file: `CLAUDE.md` → `CLAUDE.compact.md`. */
 function defaultOut(file: string): string {
-  return file.endsWith(".md") ? file.replace(/\.md$/, ".optirule.md") : `${file}.optirule.md`;
+  return file.endsWith(".md") ? file.replace(/\.md$/, ".compact.md") : `${file}.compact.md`;
 }
 
-/** Write a trimmed copy of each instruction file, dropping non-load-bearing sections. */
+function removalReason(section: SectionAblation): string {
+  const measured = [
+    ["pass", section.passRate.change],
+    ["mistakes", section.mistakes.change],
+    ["compliance", section.compliance.change],
+    ["tokens", section.tokens.change],
+    ["runtime", section.runtimeMs.change],
+    ["churn", section.churn.change],
+    ["tools", section.toolCalls.change],
+    ["reads", section.filesRead.change],
+  ]
+    .filter((entry): entry is [string, number] => entry[1] !== undefined)
+    .map(([name, value]) => `${name} ${value >= 0 ? "+" : ""}${value.toFixed(2)}`)
+    .join(", ");
+  return `${section.classification}; current − ablated: ${measured || "no optional metrics"}; ` +
+    `${section.pairedRuns} paired runs; ${section.staticTokensRemoved} static tokens removed`;
+}
+
+/** Write ablation-backed compact copies without changing the originals. */
 export function runExport(repoDir: string, options: ExportOptions): void {
-  if (!options.minimal) {
-    throw new Error("Nothing to do. `optirule export --minimal` is the only supported mode.");
+  if (!options.compact && !options.minimal) {
+    throw new Error("Nothing to do. Use `optirule export --compact`.");
   }
 
   const analysis = readAnalysis(repoDir);
-  if (!analysis?.compliance?.sections.length) {
-    throw new Error("No compliance data found. Run `optirule lint` then `optirule run` first.");
-  }
-
-  const config = loadConfig(repoDir);
-  const dropByFile = new Map<string, Set<string>>();
-  for (const section of analysis.compliance.sections) {
-    if (!isDroppable(section.signal)) continue;
-    if (!dropByFile.has(section.file)) dropByFile.set(section.file, new Set());
-    dropByFile.get(section.file)!.add(section.title);
-  }
-
-  const filesWithDrops = config.instruction_files.filter((f) => (dropByFile.get(f)?.size ?? 0) > 0);
-  if (options.out && filesWithDrops.length > 1) {
+  if (
+    analysis?.schemaVersion !== 2 ||
+    !analysis.ablation?.valid ||
+    analysis.ablation.sections.length === 0
+  ) {
     throw new Error(
-      `--out cannot target ${filesWithDrops.length} files at once; omit it to write <file>.optirule.md per file.`,
+      "No valid ablation run found. Run `optirule run --ablate` before compact export.",
     );
   }
 
-  let wrote = false;
+  const config = loadConfig(repoDir);
+  const currentHashes = instructionFileHashes(repoDir, config.instruction_files);
   for (const file of config.instruction_files) {
-    const drop = dropByFile.get(file);
-    if (!drop?.size) continue;
+    if (currentHashes[file] !== analysis.ablation.instructionFileHashes[file]) {
+      throw new Error(
+        `${file} changed after the ablation run. Run \`optirule run --ablate\` again before exporting.`,
+      );
+    }
+  }
+
+  if (options.out && config.instruction_files.length > 1) {
+    throw new Error(
+      `--out cannot target ${config.instruction_files.length} files at once; omit it to write <file>.compact.md per file.`,
+    );
+  }
+
+  for (const file of config.instruction_files) {
     const path = `${repoDir}/${file}`;
     if (!existsSync(path)) continue;
 
     const content = readFileSync(path, "utf8");
-    // Remove from the bottom up so earlier line spans stay valid.
+    const drop = analysis.ablation.sections.filter(
+      (section) => section.file === file && isDroppable(section.classification),
+    );
     const toRemove = parseSections(content, file)
-      .filter((s) => drop.has(s.title))
-      .sort((a, b) => b.startLine - a.startLine);
+      .flatMap((parsed) => {
+        const evidence = drop.find(
+          (section) =>
+            section.title === parsed.title &&
+            section.startLine === parsed.startLine &&
+            section.endLine === parsed.endLine,
+        );
+        return evidence ? [{ parsed, evidence }] : [];
+      })
+      .sort((a, b) => b.parsed.startLine - a.parsed.startLine);
     let trimmed = content;
-    for (const section of toRemove) trimmed = removeSection(trimmed, section);
+    for (const { parsed } of toRemove) trimmed = removeSection(trimmed, parsed);
 
     const outFile = options.out ?? defaultOut(file);
     const outPath = `${repoDir}/${outFile}`;
-    if (outPath === path) {
+    if (resolve(outPath) === resolve(path)) {
       throw new Error(`Refusing to overwrite the original ${file}; choose a different --out.`);
     }
     writeFileSync(outPath, trimmed);
-    console.log(`Wrote ${outFile} — dropped ${toRemove.length} section(s): ${[...drop].join(", ")}.`);
-    wrote = true;
-  }
-
-  if (!wrote) {
-    console.log("No sections were safe to drop; every section earns its keep or is unmeasured.");
-    return;
+    console.log(`Wrote ${outFile}; original ${file} is unchanged.`);
+    if (toRemove.length === 0) {
+      console.log("  Removed nothing: no section was confidently neutral or harmful.");
+    }
+    for (const { evidence } of toRemove.reverse()) {
+      console.log(`  Removed "${evidence.title}": ${removalReason(evidence)}.`);
+    }
   }
   console.log(`\nCaveat: ${CAVEAT}`);
 }

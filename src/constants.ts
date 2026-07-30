@@ -6,3 +6,4 @@ export const SUCCESS_TIMEOUT_MS = 5 * 60_000;
 export const SNAPSHOT_PREFIX = "optirule-run-";
 export const REPORT_PATH = ".optirule/report.html";
 export const ANALYSIS_PATH = ".optirule/analysis.json";
+export const RUN_PLAN_PATH = ".optirule/run-plan.json";

@@ -1,29 +1,63 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runExport, isDroppable } from "../src/commands/export.js";
-import type { Analysis, SectionCompliance, SectionSignal } from "../src/analyze.js";
+import { parseSections } from "../src/sections.js";
+import type { AblationClassification, SectionAblation } from "../src/analyze.js";
 
 const CLAUDE = "# Title\nintro\n## Keep\nload bearing\n## Drop\ndead weight";
 
-function section(title: string, signal: SectionSignal): SectionCompliance {
+function hash(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function section(
+  title: string,
+  classification: AblationClassification,
+  content = CLAUDE,
+): SectionAblation {
+  const parsed = parseSections(content, "CLAUDE.md").find((candidate) => candidate.title === title)!;
   return {
+    variant: `ablate-${title.toLowerCase()}`,
     file: "CLAUDE.md",
     title,
-    mistakesAvoided: 0,
-    tasksImproved: 0,
-    applicableRuns: signal === "never-exercised" ? 0 : 6,
-    signal,
+    startLine: parsed.startLine,
+    endLine: parsed.endLine,
+    passRate: { current: 1, ablated: 1, change: 0, confidenceInterval: [0, 0] },
+    mistakes: { current: 0, ablated: 0, change: 0, confidenceInterval: [0, 0] },
+    compliance: {},
+    tokens: {},
+    runtimeMs: { current: 10, ablated: 10, change: 0, confidenceInterval: [0, 0] },
+    churn: { current: 1, ablated: 1, change: 0, confidenceInterval: [0, 0] },
+    toolCalls: {},
+    filesRead: {},
+    staticTokensRemoved: parsed.tokens,
+    currentRuns: 5,
+    ablatedRuns: 5,
+    pairedRuns: 5,
+    confidence: classification === "inconclusive" ? "low" : "sufficient",
+    classification,
   };
 }
 
-function seed(dir: string, sections: SectionCompliance[]): void {
+function seed(dir: string, sections: SectionAblation[], content = CLAUDE): void {
   writeFileSync(join(dir, "optirule.yml"), "agent: claude\ninstruction_files:\n  - CLAUDE.md\n");
-  writeFileSync(join(dir, "CLAUDE.md"), CLAUDE);
+  writeFileSync(join(dir, "CLAUDE.md"), content);
   mkdirSync(join(dir, ".optirule"), { recursive: true });
-  const analysis = { compliance: { sections } } as unknown as Analysis;
-  writeFileSync(join(dir, ".optirule/analysis.json"), JSON.stringify(analysis));
+  writeFileSync(
+    join(dir, ".optirule/analysis.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      ablation: {
+        valid: true,
+        planFingerprint: "plan",
+        instructionFileHashes: { "CLAUDE.md": hash(content) },
+        sections,
+      },
+    }),
+  );
 }
 
 describe("runExport", () => {
@@ -37,41 +71,59 @@ describe("runExport", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("requires --minimal", () => {
-    seed(dir, [section("Drop", "redundant")]);
-    expect(() => runExport(dir, {})).toThrow(/only supported mode/);
+  it("requires compact mode", () => {
+    seed(dir, [section("Drop", "neutral")]);
+    expect(() => runExport(dir, {})).toThrow(/--compact/);
   });
 
-  it("errors when no ablation data exists", () => {
+  it("refuses export when no valid ablation data exists", () => {
     writeFileSync(join(dir, "optirule.yml"), "agent: claude\ninstruction_files:\n  - CLAUDE.md\n");
     writeFileSync(join(dir, "CLAUDE.md"), CLAUDE);
-    expect(() => runExport(dir, { minimal: true })).toThrow(/optirule lint/);
+    expect(() => runExport(dir, { compact: true })).toThrow(/valid ablation run/);
   });
 
-  it("drops inert and harmful sections but keeps load-bearing ones", () => {
-    seed(dir, [section("Keep", "earns-its-keep"), section("Drop", "redundant")]);
-    runExport(dir, { minimal: true });
-    const out = readFileSync(join(dir, "CLAUDE.optirule.md"), "utf8");
+  it("drops only confidently neutral or harmful sections", () => {
+    seed(dir, [section("Keep", "helpful"), section("Drop", "neutral")]);
+    runExport(dir, { compact: true });
+    const out = readFileSync(join(dir, "CLAUDE.compact.md"), "utf8");
     expect(out).toContain("## Keep");
     expect(out).not.toContain("## Drop");
-    expect(existsSync(join(dir, "CLAUDE.md"))).toBe(true); // original untouched
+    expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toBe(CLAUDE);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Removed "Drop": neutral'));
   });
 
-  it("honors a custom --out path", () => {
+  it("preserves low-confidence sections", () => {
+    seed(dir, [section("Drop", "inconclusive")]);
+    runExport(dir, { compact: true });
+    expect(readFileSync(join(dir, "CLAUDE.compact.md"), "utf8")).toContain("## Drop");
+  });
+
+  it("honors a custom output path", () => {
     seed(dir, [section("Drop", "harmful")]);
-    runExport(dir, { minimal: true, out: "trimmed.md" });
+    runExport(dir, { compact: true, out: "trimmed.md" });
     expect(readFileSync(join(dir, "trimmed.md"), "utf8")).not.toContain("## Drop");
+  });
+
+  it("refuses to overwrite the original through an equivalent path", () => {
+    seed(dir, [section("Drop", "neutral")]);
+    expect(() => runExport(dir, { compact: true, out: "./CLAUDE.md" })).toThrow(
+      /Refusing to overwrite/,
+    );
+  });
+
+  it("refuses stale ablation evidence after the source changes", () => {
+    seed(dir, [section("Drop", "neutral")]);
+    writeFileSync(join(dir, "CLAUDE.md"), `${CLAUDE}\nchanged`);
+    expect(() => runExport(dir, { compact: true })).toThrow(/changed after the ablation run/);
+    expect(existsSync(join(dir, "CLAUDE.compact.md"))).toBe(false);
   });
 });
 
 describe("isDroppable", () => {
-  it("drops only demonstrated redundancy or harm", () => {
-    expect(isDroppable("redundant")).toBe(true);
+  it("drops only confident neutrality or harm", () => {
+    expect(isDroppable("neutral")).toBe(true);
     expect(isDroppable("harmful")).toBe(true);
-  });
-  it("protects load-bearing, one-task, and never-exercised sections", () => {
-    expect(isDroppable("earns-its-keep")).toBe(false);
-    expect(isDroppable("single-task-signal")).toBe(false);
-    expect(isDroppable("never-exercised")).toBe(false);
+    expect(isDroppable("helpful")).toBe(false);
+    expect(isDroppable("inconclusive")).toBe(false);
   });
 });

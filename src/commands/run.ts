@@ -13,6 +13,12 @@ import { writeReport, writeAnalysis } from "../report.js";
 import { planRun, formatPlan, powerWarning } from "../estimate.js";
 import { confirm } from "../prompt.js";
 import { loadRubric, RUBRIC_FILENAME } from "../rubric.js";
+import {
+  instructionFileHashes,
+  requireMatchingRunPlan,
+  runPlanFingerprint,
+  saveRunPlan,
+} from "../runplan.js";
 
 export interface RunOptions {
   yes?: boolean;
@@ -56,6 +62,7 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
   const ablate = options.ablate ?? false;
   const variants = planVariants(sections, ablate);
   if (options.ablateFiles) variants.push(...planFileVariants(config.instruction_files));
+  const hashes = instructionFileHashes(repoDir, config.instruction_files);
 
   console.log("Collecting tasks...");
   const candidates = await collectTasks(repoDir, config);
@@ -92,13 +99,17 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
     variants.length,
     rules.some((rule) => rule.check.kind === "judge"),
   );
+  const fingerprint = runPlanFingerprint(config, tasks, variants, hashes);
   console.log(`\n${formatPlan(plan)}\n`);
+  console.log(`Plan fingerprint: ${fingerprint}\n`);
   const warning = powerWarning(tasks.length);
   if (warning) console.log(`⚠ ${warning}\n`);
   if (options.plan) {
+    saveRunPlan(repoDir, fingerprint, config, tasks, variants);
     console.log("Plan only — no agent or judge invocations were run.");
     return;
   }
+  if (options.yes) requireMatchingRunPlan(repoDir, fingerprint);
   if (!options.yes && !(await confirm("Proceed?"))) {
     console.log("Aborted.");
     return;
@@ -115,6 +126,7 @@ export async function runBenchmark(repoDir: string, options: RunOptions): Promis
     tasks.length,
     ablate ? variants.filter((v) => v.kind === "ablate") : undefined,
     rules,
+    ablate ? { planFingerprint: fingerprint, instructionFileHashes: hashes } : undefined,
   );
   const path = writeReport(repoDir, analysis);
   writeAnalysis(repoDir, analysis);

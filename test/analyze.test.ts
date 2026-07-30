@@ -29,10 +29,15 @@ function ablateVariant(id: string, title: string, tokens: number): VariantSpec {
   return { id, kind: "ablate", section };
 }
 
+const ablationMetadata = {
+  planFingerprint: "abc123",
+  instructionFileHashes: { "CLAUDE.md": "hash" },
+};
+
 describe("analyze", () => {
   it("versions the machine-readable analysis shape", () => {
     const a = analyze([...runs("baseline", 1), ...runs("current", 1)], [], 1);
-    expect(a.schemaVersion).toBe(1);
+    expect(a.schemaVersion).toBe(2);
   });
 
   it("computes pass-rate delta in percentage points (kept as a demoted metric)", () => {
@@ -65,68 +70,136 @@ describe("analyze", () => {
     expect(a.variants[1]!.avgFilesRead).toBe(1.5);
   });
 
-  it("omits section impacts without ablation data", () => {
+  it("omits section ablations without ablation data", () => {
     const a = analyze(runs("current", 1), [], 1);
-    expect(a.sectionImpacts).toBeUndefined();
+    expect(a.ablation).toBeUndefined();
   });
 
-  it("labels a token-saving section as earning its keep", () => {
+  it("classifies a token-saving section as helpful", () => {
     // Removing the section makes the agent burn far more tokens: it was helping.
     const results = [
       ...runs("current", 6, { tokens: 1000 }),
       ...runs("ablate-fix", 6, { tokens: 2000 }),
     ];
-    const a = analyze(results, [{ title: "Fix", tokens: 300 }], 6, [ablateVariant("ablate-fix", "Fix", 300)]);
-    const impact = a.sectionImpacts![0]!;
-    expect(impact.tokenImpact).toBe(1000);
-    expect(impact.signal).toBe("earns-its-keep");
+    const a = analyze(results, [{ title: "Fix", tokens: 300 }], 6, [ablateVariant("ablate-fix", "Fix", 300)], [], ablationMetadata);
+    const section = a.ablation!.sections[0]!;
+    expect(section.tokens.change).toBe(-1000);
+    expect(section.classification).toBe("helpful");
   });
 
-  it("labels an inert, non-tiny section as no measurable impact", () => {
+  it("classifies sufficiently measured practical equivalence as neutral", () => {
     const results = [
       ...runs("current", 6, { tokens: 1000 }),
       ...runs("ablate-style", 6, { tokens: 1050 }), // within the ±20% band (200)
     ];
     const a = analyze(results, [{ title: "Style", tokens: 500 }], 6, [
       ablateVariant("ablate-style", "Style", 500),
-    ]);
-    expect(a.sectionImpacts![0]!.signal).toBe("no-measurable-impact");
+    ], [], ablationMetadata);
+    expect(a.ablation!.sections[0]).toMatchObject({
+      confidence: "sufficient",
+      classification: "neutral",
+    });
   });
 
-  it("labels a token-hungry section as actively hurting", () => {
+  it("classifies a token-hungry section as harmful", () => {
     const results = [
       ...runs("current", 6, { tokens: 1000 }),
       ...runs("ablate-verbose", 6, { tokens: 600 }), // removing it saved 400 (> band)
     ];
     const a = analyze(results, [{ title: "Verbose", tokens: 500 }], 6, [
       ablateVariant("ablate-verbose", "Verbose", 500),
-    ]);
-    expect(a.sectionImpacts![0]!.signal).toBe("actively-hurts");
+    ], [], ablationMetadata);
+    expect(a.ablation!.sections[0]!.classification).toBe("harmful");
   });
 
-  it("labels a tiny inert section as too small to measure", () => {
-    const results = [
-      ...runs("current", 6, { tokens: 1000 }),
-      ...runs("ablate-tiny", 6, { tokens: 1010 }),
-    ];
-    const a = analyze(results, [{ title: "Tiny", tokens: 10 }, { title: "Rest", tokens: 990 }], 6, [
-      ablateVariant("ablate-tiny", "Tiny", 10),
-    ]);
-    expect(a.sectionImpacts![0]!.signal).toBe("too-small-to-measure");
-  });
-
-  it("flags too-few-runs sections as low confidence", () => {
+  it("keeps too-few-run sections inconclusive rather than neutral", () => {
     const results = [...runs("current", 1, { tokens: 1000 }), ...runs("ablate-x", 1, { tokens: 5000 })];
-    const a = analyze(results, [{ title: "X", tokens: 500 }], 1, [ablateVariant("ablate-x", "X", 500)]);
-    expect(a.sectionImpacts![0]!.signal).toBe("low-confidence");
+    const a = analyze(results, [{ title: "X", tokens: 500 }], 1, [ablateVariant("ablate-x", "X", 500)], [], ablationMetadata);
+    expect(a.ablation!.sections[0]).toMatchObject({
+      confidence: "low",
+      classification: "inconclusive",
+    });
   });
 
-  it("cannot classify a section without token data", () => {
+  it("can classify a section from required outcome metrics without token data", () => {
     const results = [...runs("current", 6), ...runs("ablate-y", 6)];
-    const a = analyze(results, [{ title: "Y", tokens: 500 }], 6, [ablateVariant("ablate-y", "Y", 500)]);
-    const impact = a.sectionImpacts![0]!;
-    expect(impact.tokenImpact).toBeUndefined();
-    expect(impact.signal).toBe("low-confidence");
+    const a = analyze(results, [{ title: "Y", tokens: 500 }], 6, [ablateVariant("ablate-y", "Y", 500)], [], ablationMetadata);
+    const section = a.ablation!.sections[0]!;
+    expect(section.tokens.change).toBeUndefined();
+    expect(section.classification).toBe("neutral");
+  });
+
+  it("reports every metric as current minus ablated with confidence and run counts", () => {
+    const result = (
+      variant: string,
+      rep: number,
+      values: {
+        passed: boolean;
+        durationMs: number;
+        tokens: number;
+        churn: number;
+        toolCalls: number;
+        filesRead: string[];
+        verdict: "followed" | "violated";
+      },
+    ): RunResult => ({
+      taskId: "task",
+      variant,
+      rep,
+      passed: values.passed,
+      durationMs: values.durationMs,
+      tokens: values.tokens,
+      filesChanged: [],
+      filesRead: values.filesRead,
+      verdicts: [{ ruleId: "rule", verdict: values.verdict }],
+      churn: values.churn,
+      toolCalls: values.toolCalls,
+    });
+    const results = Array.from({ length: 5 }, (_, rep) => [
+      result("current", rep, {
+        passed: true,
+        durationMs: 800,
+        tokens: 900,
+        churn: 8,
+        toolCalls: 4,
+        filesRead: ["a"],
+        verdict: "followed",
+      }),
+      result("ablate-rules", rep, {
+        passed: false,
+        durationMs: 1000,
+        tokens: 1200,
+        churn: 10,
+        toolCalls: 6,
+        filesRead: ["a", "b"],
+        verdict: "violated",
+      }),
+    ]).flat();
+    const a = analyze(
+      results,
+      [{ title: "Rules", tokens: 40 }],
+      1,
+      [ablateVariant("ablate-rules", "Rules", 40)],
+      [],
+      ablationMetadata,
+    );
+    expect(a.ablation!.valid).toBe(true);
+    expect(a.ablation!.sections[0]).toMatchObject({
+      currentRuns: 5,
+      ablatedRuns: 5,
+      pairedRuns: 5,
+      confidence: "sufficient",
+      classification: "helpful",
+      passRate: { current: 1, ablated: 0, change: 1, confidenceInterval: [1, 1] },
+      mistakes: { current: 0, ablated: 1, change: -1, confidenceInterval: [-1, -1] },
+      compliance: { current: 1, ablated: 0, change: 1, confidenceInterval: [1, 1] },
+      tokens: { change: -300 },
+      runtimeMs: { change: -200 },
+      churn: { change: -2 },
+      toolCalls: { change: -2 },
+      filesRead: { change: -1 },
+      staticTokensRemoved: 40,
+    });
   });
 });
 
@@ -202,7 +275,7 @@ describe("recommendation", () => {
     const a = analyze(results, [{ title: "Fix", tokens: 300 }, { title: "Style", tokens: 300 }], 6, [
       ablateVariant("ablate-fix", "Fix", 300),
       ablateVariant("ablate-style", "Style", 300),
-    ]);
+    ], [], ablationMetadata);
     const text = a.recommendation.join(" ");
     expect(text).toMatch(/Keep.*Fix/);
     expect(text).toMatch(/Drop.*Style/);

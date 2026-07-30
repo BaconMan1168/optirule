@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { runInit } from "./commands/init.js";
 import { runBenchmark } from "./commands/run.js";
 import { runExport } from "./commands/export.js";
@@ -33,7 +33,7 @@ program
 program
   .command("run")
   .description("Run the benchmark: baseline vs current instructions")
-  .option("-y, --yes", "skip the cost confirmation prompt")
+  .addOption(new Option("-y, --yes").hideHelp())
   .option("--agent <name>", "override the configured agent")
   .option("--ablate", "also measure each section's impact via leave-one-out ablation")
   .option("--ablate-files", "also measure each whole instruction file's impact")
@@ -51,8 +51,9 @@ program
 
 program
   .command("export")
-  .description("Emit a trimmed instruction file from the last compliance run")
-  .option("--minimal", "drop sections proven redundant or harmful")
+  .description("Emit a compact instruction file from the last valid ablation run")
+  .option("--compact", "drop only sections confidently neutral or harmful")
+  .option("--minimal", "alias for --compact")
   .option("--out <path>", "output path (single instruction file only)")
   .action((options) => {
     try {

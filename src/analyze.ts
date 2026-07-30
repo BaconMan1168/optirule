@@ -41,31 +41,50 @@ export interface VariantSummary {
   avgFilesRead?: number;
 }
 
-/** Honest label for a section's measured token impact. */
-export type ImpactSignal =
-  | "earns-its-keep"
-  | "no-measurable-impact"
-  | "actively-hurts"
-  | "too-small-to-measure"
-  | "low-confidence";
+export type AblationClassification = "helpful" | "harmful" | "neutral" | "inconclusive";
+export type AblationConfidence = "sufficient" | "low";
 
-/** One ablated section's measured effect on agent token usage versus `current`. */
-export interface SectionImpact {
+/** Current minus leave-one-section-out for one measured outcome. */
+export interface MetricComparison {
+  current?: number;
+  ablated?: number;
+  change?: number;
+  confidenceInterval?: [number, number];
+}
+
+/** One section's complete leave-one-out comparison against `current`. */
+export interface SectionAblation {
+  variant: string;
   file: string;
   title: string;
-  /** The section's deterministic static token cost (paid on every run). */
-  staticTokens: number;
-  /** avg tokens(ablated) − avg tokens(current); positive = the section saved tokens. */
-  tokenImpact?: number;
+  startLine: number;
+  endLine: number;
+  passRate: MetricComparison;
+  mistakes: MetricComparison;
+  compliance: MetricComparison;
+  tokens: MetricComparison;
+  runtimeMs: MetricComparison;
+  churn: MetricComparison;
+  toolCalls: MetricComparison;
+  filesRead: MetricComparison;
+  staticTokensRemoved: number;
+  currentRuns: number;
   ablatedRuns: number;
-  /** Static token cost as a fraction of the whole instruction file(s). */
-  tokenShare: number;
-  signal: ImpactSignal;
+  pairedRuns: number;
+  confidence: AblationConfidence;
+  classification: AblationClassification;
+}
+
+export interface AblationAnalysis {
+  valid: boolean;
+  planFingerprint: string;
+  instructionFileHashes: Record<string, string>;
+  sections: SectionAblation[];
 }
 
 export interface Analysis {
   /** Version of the machine-readable `.optirule/analysis.json` shape. */
-  schemaVersion: 1;
+  schemaVersion: 2;
   variants: VariantSummary[];
   /** current pass rate minus baseline pass rate, in points (kept as a demoted metric). */
   passRateDeltaPct: number;
@@ -78,18 +97,18 @@ export interface Analysis {
   taskCount: number;
   /** Rule-following comparison between baseline and current. */
   compliance: ComplianceAnalysis;
-  /** Per-section token impact, populated only for `--ablate` runs. */
-  sectionImpacts?: SectionImpact[];
+  /** Complete leave-one-section-out results, populated only for `--ablate` runs. */
+  ablation?: AblationAnalysis;
   /** Plain-language guidance generated from the deltas. */
   recommendation: string[];
 }
 
 /** Minimum runs per variant before a delta is worth trusting over agent noise. */
 const CONFIDENT_RUNS = 5;
-/** A token impact within ±(this × current avg tokens) is treated as noise. */
-const NEUTRAL_BAND_FRACTION = 0.2;
-/** A section below this share of total tokens is too small to attribute effects to. */
-const SMALL_SECTION_SHARE = 0.05;
+/** Cost changes within ±20% are treated as practically neutral. */
+const COST_BAND_FRACTION = 0.2;
+const RATE_BAND = 0.05;
+const MISTAKE_BAND = 0.1;
 
 function summarize(variant: string, results: RunResult[]): VariantSummary {
   const runs = results.length;
@@ -121,53 +140,139 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/**
- * Map a section's measured token impact to an honest label. A confident effect
- * (outside the neutral band) always wins — a load-bearing section reads as
- * "earns its keep" even when small. The size caveat only qualifies a null
- * result, where we can't tell "no effect" apart from "too small to have one".
- */
-function classify(
-  tokenImpact: number | undefined,
-  band: number,
-  lowConfidence: boolean,
-  tooSmall: boolean,
-): ImpactSignal {
-  if (lowConfidence || tokenImpact === undefined) return "low-confidence";
-  if (tokenImpact >= band) return "earns-its-keep";
-  if (tokenImpact <= -band) return "actively-hurts";
-  return tooSmall ? "too-small-to-measure" : "no-measurable-impact";
+type RunMetric = (result: RunResult) => number | undefined;
+
+function violations(result: RunResult): number {
+  return result.verdicts.filter((verdict) => verdict.verdict === "violated").length;
 }
 
-function sectionImpacts(
+function complianceRate(result: RunResult): number | undefined {
+  const applicable = result.verdicts.filter((verdict) => verdict.verdict !== "not-applicable");
+  if (applicable.length === 0) return undefined;
+  return applicable.filter((verdict) => verdict.verdict === "followed").length / applicable.length;
+}
+
+function compareMetric(
+  current: RunResult[],
+  ablated: RunResult[],
+  metric: RunMetric,
+): MetricComparison {
+  const without = new Map(ablated.map((result) => [`${result.taskId}:${result.rep}`, result]));
+  const pairs = current.flatMap((withSection) => {
+    const withoutSection = without.get(`${withSection.taskId}:${withSection.rep}`);
+    if (!withoutSection) return [];
+    const withValue = metric(withSection);
+    const withoutValue = metric(withoutSection);
+    return withValue === undefined || withoutValue === undefined
+      ? []
+      : [{ current: withValue, ablated: withoutValue }];
+  });
+  if (pairs.length === 0) return {};
+  const changes = pairs.map((pair) => pair.current - pair.ablated);
+  return {
+    current: mean(pairs.map((pair) => pair.current)),
+    ablated: mean(pairs.map((pair) => pair.ablated)),
+    change: mean(changes),
+    confidenceInterval: bootstrapCI(changes),
+  };
+}
+
+function confidentDirection(
+  metric: MetricComparison,
+  band: number,
+  helpfulWhenPositive: boolean,
+): "helpful" | "harmful" | undefined {
+  if (metric.change === undefined || !metric.confidenceInterval) return undefined;
+  const [low, high] = metric.confidenceInterval;
+  if (Math.abs(metric.change) < band || (low <= 0 && high >= 0)) return undefined;
+  const positive = metric.change > 0;
+  return positive === helpfulWhenPositive ? "helpful" : "harmful";
+}
+
+function relativeBand(metric: MetricComparison): number {
+  return COST_BAND_FRACTION * Math.max(Math.abs(metric.ablated ?? 0), 1);
+}
+
+function classifyAblation(
+  confidence: AblationConfidence,
+  comparisons: {
+    passRate: MetricComparison;
+    mistakes: MetricComparison;
+    compliance: MetricComparison;
+    tokens: MetricComparison;
+    runtimeMs: MetricComparison;
+    churn: MetricComparison;
+    toolCalls: MetricComparison;
+    filesRead: MetricComparison;
+  },
+): AblationClassification {
+  if (confidence === "low") return "inconclusive";
+  const directions = [
+    confidentDirection(comparisons.passRate, RATE_BAND, true),
+    confidentDirection(comparisons.mistakes, MISTAKE_BAND, false),
+    confidentDirection(comparisons.compliance, RATE_BAND, true),
+    confidentDirection(comparisons.tokens, relativeBand(comparisons.tokens), false),
+    confidentDirection(comparisons.runtimeMs, relativeBand(comparisons.runtimeMs), false),
+    confidentDirection(comparisons.churn, relativeBand(comparisons.churn), false),
+    confidentDirection(comparisons.toolCalls, relativeBand(comparisons.toolCalls), false),
+    confidentDirection(comparisons.filesRead, relativeBand(comparisons.filesRead), false),
+  ].filter((direction): direction is "helpful" | "harmful" => direction !== undefined);
+  const helpful = directions.includes("helpful");
+  const harmful = directions.includes("harmful");
+  if (helpful && harmful) return "inconclusive";
+  if (helpful) return "helpful";
+  if (harmful) return "harmful";
+  return "neutral";
+}
+
+function sectionAblations(
   results: RunResult[],
-  current: VariantSummary,
   ablated: VariantSpec[],
-  totalTokens: number,
-): SectionImpact[] {
-  const band = NEUTRAL_BAND_FRACTION * (current.avgTokens ?? 0);
-  const impacts: SectionImpact[] = [];
+): SectionAblation[] {
+  const current = results.filter((result) => result.variant === "current");
+  const comparisons: SectionAblation[] = [];
   for (const variant of ablated) {
     if (variant.kind !== "ablate") continue;
-    const summary = summarize(variant.id, results.filter((r) => r.variant === variant.id));
-    const tokenImpact =
-      current.avgTokens !== undefined && summary.avgTokens !== undefined
-        ? summary.avgTokens - current.avgTokens
-        : undefined;
-    const tokenShare = totalTokens ? variant.section.tokens / totalTokens : 0;
-    const lowConfidence = Math.min(summary.runs, current.runs) < CONFIDENT_RUNS;
-    const tooSmall = tokenShare < SMALL_SECTION_SHARE;
-    impacts.push({
+    const withoutSection = results.filter((result) => result.variant === variant.id);
+    const passRate = compareMetric(current, withoutSection, (result) => Number(result.passed));
+    const mistakes = compareMetric(current, withoutSection, violations);
+    const compliance = compareMetric(current, withoutSection, complianceRate);
+    const tokens = compareMetric(current, withoutSection, (result) => result.tokens);
+    const runtimeMs = compareMetric(current, withoutSection, (result) => result.durationMs);
+    const churn = compareMetric(current, withoutSection, (result) => result.churn);
+    const toolCalls = compareMetric(current, withoutSection, (result) => result.toolCalls);
+    const filesRead = compareMetric(current, withoutSection, (result) => result.filesRead?.length);
+    const pairedRuns = Math.min(current.length, withoutSection.length);
+    const confidence =
+      Math.min(current.length, withoutSection.length, pairedRuns) >= CONFIDENT_RUNS
+        ? "sufficient"
+        : "low";
+    const metrics = {
+      passRate,
+      mistakes,
+      compliance,
+      tokens,
+      runtimeMs,
+      churn,
+      toolCalls,
+      filesRead,
+    };
+    comparisons.push({
+      variant: variant.id,
       file: variant.section.file,
       title: variant.section.title,
-      staticTokens: variant.section.tokens,
-      tokenImpact,
-      ablatedRuns: summary.runs,
-      tokenShare,
-      signal: classify(tokenImpact, band, lowConfidence, tooSmall),
+      startLine: variant.section.startLine,
+      endLine: variant.section.endLine,
+      ...metrics,
+      staticTokensRemoved: variant.section.tokens,
+      currentRuns: current.length,
+      ablatedRuns: withoutSection.length,
+      pairedRuns,
+      confidence,
+      classification: classifyAblation(confidence, metrics),
     });
   }
-  return impacts;
+  return comparisons;
 }
 
 /** Overall token-efficiency threshold for the whole-file verdict, in percent. */
@@ -179,7 +284,7 @@ function recommend(
   current: VariantSummary,
   tokenDeltaPct: number | undefined,
   totalInstructionTokens: number,
-  impacts: SectionImpact[] | undefined,
+  ablations: SectionAblation[] | undefined,
   compliance: ComplianceAnalysis,
 ): string[] {
   const lines: string[] = [];
@@ -215,14 +320,20 @@ function recommend(
     );
   }
 
-  if (impacts?.length) {
-    const label = (i: SectionImpact) => i.title;
-    const keep = impacts.filter((i) => i.signal === "earns-its-keep").map(label);
-    const drop = impacts
-      .filter((i) => i.signal === "no-measurable-impact" || i.signal === "actively-hurts")
-      .map((i) => `${i.title} (${i.signal === "actively-hurts" ? "actively hurts" : "dead weight"}, ~${i.staticTokens.toLocaleString()} static tokens)`);
-    const unmeasured = impacts
-      .filter((i) => i.signal === "too-small-to-measure" || i.signal === "low-confidence")
+  if (ablations?.length) {
+    const label = (section: SectionAblation) => section.title;
+    const keep = ablations.filter((section) => section.classification === "helpful").map(label);
+    const drop = ablations
+      .filter(
+        (section) =>
+          section.classification === "neutral" || section.classification === "harmful",
+      )
+      .map(
+        (section) =>
+          `${section.title} (${section.classification}, ~${section.staticTokensRemoved.toLocaleString()} static tokens)`,
+      );
+    const unmeasured = ablations
+      .filter((section) => section.classification === "inconclusive")
       .map(label);
     if (keep.length) lines.push(`Keep: ${keep.join(", ")}.`);
     if (drop.length) lines.push(`Drop: ${drop.join(", ")}.`);
@@ -239,6 +350,7 @@ export function analyze(
   taskCount: number,
   ablated?: VariantSpec[],
   rules: Rule[] = [],
+  ablationMetadata?: { planFingerprint: string; instructionFileHashes: Record<string, string> },
 ): Analysis {
   const baseline = summarize("baseline", results.filter((r) => r.variant === "baseline"));
   const current = summarize("current", results.filter((r) => r.variant === "current"));
@@ -247,12 +359,12 @@ export function analyze(
     baseline.avgTokens !== undefined && current.avgTokens !== undefined && baseline.avgTokens > 0
       ? round1(((current.avgTokens - baseline.avgTokens) / baseline.avgTokens) * 100)
       : undefined;
-  const impacts = ablated?.length
-    ? sectionImpacts(results, current, ablated, totalInstructionTokens)
+  const ablations = ablated?.length
+    ? sectionAblations(results, ablated)
     : undefined;
   const compliance = analyzeCompliance(results, rules);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     variants: [baseline, current],
     passRateDeltaPct: (current.passRate - baseline.passRate) * 100,
     tokenDeltaPct,
@@ -261,13 +373,25 @@ export function analyze(
     totalInstructionTokens,
     taskCount,
     compliance,
-    sectionImpacts: impacts,
+    ablation:
+      ablations && ablationMetadata
+        ? {
+            valid:
+              ablations.length === ablated?.length &&
+              ablations.every(
+                (section) =>
+                  section.currentRuns > 0 && section.ablatedRuns === section.currentRuns,
+              ),
+            ...ablationMetadata,
+            sections: ablations,
+          }
+        : undefined,
     recommendation: recommend(
       baseline,
       current,
       tokenDeltaPct,
       totalInstructionTokens,
-      impacts,
+      ablations,
       compliance,
     ),
   };
