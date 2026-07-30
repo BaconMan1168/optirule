@@ -14,8 +14,8 @@ program
 program
   .command("init")
   .description("Detect instruction files and scaffold optirule.yml")
-  .action(() => {
-    runInit(process.cwd());
+  .action(async () => {
+    await runInit(process.cwd());
   });
 
 program

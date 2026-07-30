@@ -1,21 +1,32 @@
 import { writeFileSync, existsSync } from "node:fs";
 import { detectInstructionFiles, detectInstalledAgents, chooseAgent, detectAgent } from "../detect.js";
 import { scaffoldConfig, CONFIG_FILENAME } from "../config.js";
+import { selectInstructionFiles } from "../prompt.js";
 
 /** Detect instruction files and scaffold optirule.yml in the repo root. */
-export function runInit(repoDir: string): void {
+export async function runInit(
+  repoDir: string,
+  selectFiles: (files: string[]) => Promise<string[]> = selectInstructionFiles,
+): Promise<void> {
   const configPath = `${repoDir}/${CONFIG_FILENAME}`;
   if (existsSync(configPath)) {
     console.log(`${CONFIG_FILENAME} already exists — leaving it untouched.`);
     return;
   }
 
-  const files = detectInstructionFiles(repoDir);
-  if (files.length === 0) {
+  const detectedFiles = detectInstructionFiles(repoDir);
+  if (detectedFiles.length === 0) {
     console.error(
       "No instruction files found (looked for CLAUDE.md, AGENTS.md, GEMINI.md, .cursorrules).",
     );
     console.error("Create one, then run `optirule init` again.");
+    process.exitCode = 1;
+    return;
+  }
+
+  const files = await selectFiles(detectedFiles);
+  if (files.length === 0) {
+    console.error("Select at least one instruction file.");
     process.exitCode = 1;
     return;
   }
