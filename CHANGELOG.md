@@ -31,8 +31,17 @@ it is run from an interactive terminal, and `--version` misreports `0.3.0`.
 
 ## [0.3.0] - 2026-07-29
 
+Includes the work prepared for 0.2.0, which was never tagged or published.
+
 ### Added
 
+- Add `optirule run --plan` to collect measurable tasks and print the exact
+  agent and judge invocation plan without starting any model calls.
+- Add a validated Claude Code plugin and the user-invoked `/optirule:audit`
+  skill for setup, rubric review, cost planning, benchmarking, reporting, and
+  safe minimal export.
+- Add `schemaVersion: 1` to `.optirule/analysis.json` as a stable integration
+  check for skills and local automation.
 - Add complete leave-one-section-out metrics for pass rate, mistakes,
   compliance, tokens, runtime, churn, tool calls, files read, static tokens,
   run counts, paired confidence intervals, and section classification.
@@ -55,18 +64,6 @@ it is run from an interactive terminal, and `--version` misreports `0.3.0`.
 - Make `max_tasks` and `reps` from `optirule.yml` authoritative in both skills;
   the two-task, one-repetition scope is now an explicit cheap-trial option.
 - Keep `/optirule:audit` focused on normal baseline-versus-current evaluation.
-
-## [0.2.0] - 2026-07-29
-
-### Added
-
-- Add `optirule run --plan` to collect measurable tasks and print the exact
-  agent and judge invocation plan without starting any model calls.
-- Add a validated Claude Code plugin and the user-invoked `/optirule:audit`
-  skill for setup, rubric review, cost planning, benchmarking, reporting, and
-  safe minimal export.
-- Add `schemaVersion: 1` to `.optirule/analysis.json` as a stable integration
-  check for skills and local automation.
 
 ### Fixed
 
@@ -116,7 +113,6 @@ Initial release.
 [Unreleased]: https://github.com/BaconMan1168/optirule/compare/v0.3.2...HEAD
 [0.3.2]: https://github.com/BaconMan1168/optirule/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/BaconMan1168/optirule/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/BaconMan1168/optirule/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/BaconMan1168/optirule/compare/v0.1.1...v0.2.0
+[0.3.0]: https://github.com/BaconMan1168/optirule/compare/v0.1.1...v0.3.0
 [0.1.1]: https://github.com/BaconMan1168/optirule/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/BaconMan1168/optirule/releases/tag/v0.1.0
